@@ -1,0 +1,29 @@
+{
+  "name": "room-riot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Room Riot — a web-first party game. Phase 1 / six-game MVP vertical slice.",
+  "license": "UNLICENSED",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,web -c green,cyan \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "npm run dev --workspace @roomriot/game-server",
+    "dev:web": "npm run dev --workspace @roomriot/web",
+    "build": "npm run build --workspace @roomriot/web",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -b --pretty"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "concurrently": "^9.1.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
