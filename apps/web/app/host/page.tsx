@@ -5,6 +5,7 @@ import type { EntitlementStatus, GameType } from '@roomriot/contracts';
 import { GAME_FAMILY } from '@roomriot/contracts';
 import { hostRoom, getEntitlements, devCheckout, ensureGuestToken } from '../../lib/api';
 import { saveCreds } from '../../lib/storage';
+import { AgeGate } from '../../components/AgeGate';
 
 const TITLES: Record<GameType, string> = {
   majority_report: 'Majority Report',
@@ -74,6 +75,7 @@ export default function HostSetup() {
         ROOM <em>RIOT</em>
       </div>
 
+      <AgeGate>
       <div className="card stack">
         <h2>Host a night</h2>
         <label className="field">
@@ -143,6 +145,7 @@ export default function HostSetup() {
           )}
         </div>
       )}
+      </AgeGate>
 
       <a className="btn ghost small" href="/" style={{ alignSelf: 'center', textDecoration: 'none' }}>
         Back

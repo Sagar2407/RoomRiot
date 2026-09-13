@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import type { MembershipCredentials } from '@roomriot/contracts';
 import { joinRoom, startPractice } from '../lib/api';
 import { saveCreds } from '../lib/storage';
+import { AgeGate } from '../components/AgeGate';
 
 type Mode = 'home' | 'join';
 
@@ -45,6 +46,7 @@ export default function Home() {
 
       {error && <div className="error">{error}</div>}
 
+      <AgeGate>
       {mode === 'home' && (
         <div className="stack">
           <button className="btn orange" onClick={() => router.push('/host')}>
@@ -95,6 +97,7 @@ export default function Home() {
           </button>
         </div>
       )}
+      </AgeGate>
     </main>
   );
 }

@@ -35,7 +35,7 @@ ENV NODE_ENV=production
 ENV HOST=0.0.0.0
 ENV PORT=8080
 ENV ROOM_RIOT_BILLING_ENABLED=false
-ENV ROOM_RIOT_PLAYLIST=majority_report,caption_court,close_call
+ENV ROOM_RIOT_PLAYLIST=majority_report,link_up,bluff_bureau,caption_court,close_call
 ENV SERVE_WEB_DIR=/app/apps/web/out
 ENV ROOM_RIOT_DB=/app/data/room-riot.sqlite
 

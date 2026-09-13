@@ -4,6 +4,7 @@
  */
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
+import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import { Server as IOServer } from 'socket.io';
 import { existsSync, readFileSync } from 'node:fs';
@@ -25,12 +26,19 @@ export interface BuiltServer {
 
 export async function buildServer(dbPath?: string): Promise<BuiltServer> {
   const db = openDb(dbPath);
-  const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' } });
+  // trustProxy so req.ip is the real client IP behind Render's proxy (needed for
+  // per-IP rate limiting, not the shared proxy address).
+  const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' }, trustProxy: true });
 
   await app.register(cors, {
     origin: config.webOrigin === '*' ? true : [config.webOrigin],
     credentials: true,
   });
+
+  // Rate limiting is opt-in per route (global:false), so it protects the mutating
+  // API endpoints without ever throttling static assets or a whole party joining
+  // from one Wi-Fi (blueprint §9).
+  await app.register(rateLimit, { global: false });
 
   // Keep the raw JSON body available for billing webhook signature verification.
   app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {

@@ -27,6 +27,13 @@ export function openDb(path = config.dbPath): DB {
   } catch {
     /* column already exists */
   }
+  // The roster locked at game start, so a restart rebuilds the same seating
+  // instead of recomputing it from whoever is active now (blueprint §10).
+  try {
+    db.exec(`ALTER TABLE game_instances ADD COLUMN roster_json TEXT`);
+  } catch {
+    /* column already exists */
+  }
   return db;
 }
 
@@ -72,6 +79,7 @@ function migrate(db: DB): void {
       seed           TEXT NOT NULL,
       state_json     TEXT NOT NULL,
       phase_id       TEXT NOT NULL,
+      roster_json    TEXT,
       deadline_at    INTEGER,
       status         TEXT NOT NULL,
       settled        INTEGER NOT NULL DEFAULT 0,
