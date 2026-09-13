@@ -1,11 +1,46 @@
 'use client';
-import type { RoomProjection } from '@roomriot/contracts';
+import { useState } from 'react';
+import type { RoomProjection, ClientAction, ActionResult } from '@roomriot/contracts';
 import { Scoreboard } from './Scoreboard';
 
-export function Results({ projection, selfId }: { projection: RoomProjection; selfId?: string }) {
+type Send = (a: Omit<ClientAction, 'actionId'>) => Promise<ActionResult>;
+
+export function Results({
+  projection,
+  selfId,
+  isHost,
+  send,
+}: {
+  projection: RoomProjection;
+  selfId?: string;
+  isHost?: boolean;
+  send?: Send;
+}) {
   const awards = projection.awards ?? [];
   const champion = awards.find((a) => a.key === 'night_champion');
   const skill = awards.filter((a) => a.key !== 'night_champion');
+  const [copied, setCopied] = useState(false);
+
+  function copyRecap() {
+    const lines: string[] = ['Room Riot — night recap'];
+    if (champion) lines.push(`🏆 Champion: ${champion.nickname ?? '—'} (${champion.detail})`);
+    lines.push('', 'Scores:');
+    projection.scoreboard.forEach((l, i) => lines.push(`${i + 1}. ${l.nickname} — ${l.total}${l.official ? '' : ' (partial)'}`));
+    if (skill.length) {
+      lines.push('', 'Awards:');
+      for (const a of skill) lines.push(`• ${a.title}: ${a.nickname ?? '—'} — ${a.detail}`);
+    }
+    const text = lines.join('\n');
+    navigator.clipboard
+      ?.writeText(text)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1800);
+      })
+      .catch(() => {
+        /* clipboard unavailable — no-op */
+      });
+  }
 
   return (
     <div className="stack">
@@ -37,6 +72,26 @@ export function Results({ projection, selfId }: { projection: RoomProjection; se
         </div>
       )}
 
+      {/* Play again with the same crew — a fresh night in this same room. */}
+      <div className="card stack center">
+        {isHost && send ? (
+          <>
+            <strong>Play again with this crew?</strong>
+            <p className="muted small" style={{ margin: 0 }}>
+              Same room and players, a brand-new night with fresh deals.
+            </p>
+            <button className="btn orange" onClick={() => send({ type: 'rematch' })}>
+              Rematch
+            </button>
+          </>
+        ) : (
+          <p className="muted small" style={{ margin: 0 }}>Waiting for the host to start a rematch…</p>
+        )}
+        <button className="btn ghost small" onClick={copyRecap}>
+          {copied ? 'Recap copied!' : 'Copy recap'}
+        </button>
+      </div>
+
       {projection.billingEnabled && projection.tier !== 'party_pass' && (
         <div className="card stack center">
           <strong>Enjoyed the night?</strong>
@@ -49,9 +104,6 @@ export function Results({ projection, selfId }: { projection: RoomProjection; se
         </div>
       )}
 
-      <a className="btn ghost" href="/host" style={{ textAlign: 'center', textDecoration: 'none' }}>
-        Play again with this crew
-      </a>
       <p className="small muted center">
         No photos, recordings, or publishing. Your recap stays private to the room. · <a href="/support">Support</a>
       </p>

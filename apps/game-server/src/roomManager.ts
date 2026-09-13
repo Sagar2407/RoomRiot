@@ -88,6 +88,8 @@ interface Room {
   expiresAt: number;
   /** Set once the night has completed, so settlement/emit happens exactly once. */
   nightCompleted: boolean;
+  /** Bumped on a rematch so each night's scoreboard counts only its own games. */
+  nightSeq: number;
 }
 
 const DEFAULT_SETTINGS: RoomSettings = {
@@ -155,6 +157,7 @@ export class RoomManager {
       timer: null,
       expiresAt: now + config.roomTtlMs,
       nightCompleted: false,
+      nightSeq: 0,
     };
     this.db
       .prepare(
@@ -312,7 +315,13 @@ export class RoomManager {
     if (!member || !member.active) return this.recordAndReject(room, action, memberId, 'unauthorized', 'Not a member');
 
     // Host lifecycle actions.
-    if (action.type === 'start_night' || action.type === 'next' || action.type === 'end_night' || action.type === 'add_bot') {
+    if (
+      action.type === 'start_night' ||
+      action.type === 'next' ||
+      action.type === 'end_night' ||
+      action.type === 'add_bot' ||
+      action.type === 'rematch'
+    ) {
       if (member.role !== 'host') return this.recordAndReject(room, action, memberId, 'not_permitted', 'Host only');
       return this.hostAction(room, action, memberId);
     }
@@ -381,6 +390,8 @@ export class RoomManager {
       this.completeNight(room);
     } else if (action.type === 'add_bot') {
       if (room.status === 'lobby' || room.status === 'intermission') this.addBots(room.id, 1);
+    } else if (action.type === 'rematch') {
+      if (room.status === 'complete') this.rematch(room);
     }
     this.recordAction(room, action, memberId, true, null);
     this.touch(room);
@@ -502,11 +513,11 @@ export class RoomManager {
     }
 
     const insertLedger = this.db.prepare(
-      `INSERT OR IGNORE INTO score_ledger (settlement_key, room_id, game_instance_id, member_id, game_type, raw, night_points, created_at)
-       VALUES (?,?,?,?,?,?,?,?)`,
+      `INSERT OR IGNORE INTO score_ledger (settlement_key, room_id, game_instance_id, member_id, game_type, raw, night_points, night_seq, created_at)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
     );
     const insertAward = this.db.prepare(
-      `INSERT OR IGNORE INTO awards (id, room_id, game_instance_id, award_key, title, member_id, detail) VALUES (?,?,?,?,?,?,?)`,
+      `INSERT OR IGNORE INTO awards (id, room_id, game_instance_id, award_key, title, member_id, detail, night_seq) VALUES (?,?,?,?,?,?,?,?)`,
     );
     const insertXp = this.db.prepare(
       `INSERT OR IGNORE INTO xp_ledger (award_key, room_id, guest_id, member_id, source, amount, created_at) VALUES (?,?,?,?,?,?,?)`,
@@ -514,13 +525,13 @@ export class RoomManager {
     const now = Date.now();
     const txn = this.db.transaction(() => {
       for (const e of np) {
-        insertLedger.run(`${room.id}:${g.id}:${e.memberId}:game`, room.id, g.id, e.memberId, g.gameType, e.raw, e.nightPoints, now);
+        insertLedger.run(`${room.id}:${g.id}:${e.memberId}:game`, room.id, g.id, e.memberId, g.gameType, e.raw, e.nightPoints, room.nightSeq, now);
         // XP: 20 for completing an eligible game (idempotent by award key). §6
         const guestId = room.members.get(e.memberId)?.guestId ?? e.memberId;
         insertXp.run(`${room.id}:${g.id}:${e.memberId}:xp_game`, room.id, guestId, e.memberId, 'game_completed', XP_PER_GAME, now);
       }
       for (const a of awards) {
-        insertAward.run(randomUUID(), room.id, g.id, a.key, a.title, a.memberId, a.detail);
+        insertAward.run(randomUUID(), room.id, g.id, a.key, a.title, a.memberId, a.detail, room.nightSeq);
         // XP: one 5-point achievement bonus per member per game (capped by key). §6
         if (a.memberId) {
           const guestId = room.members.get(a.memberId)?.guestId ?? a.memberId;
@@ -559,6 +570,32 @@ export class RoomManager {
       rosterSize: [...room.members.values()].filter((m) => m.active).length,
       meta: { gamesPlayed: room.settledGames.length },
     });
+  }
+
+  /**
+   * "Play again with this crew" (plan §3, §6). Keeps the same room and roster but
+   * starts a fresh night: a new night sequence (so the scoreboard counts only the
+   * new games), a new seed (fresh shuffles/dice), and back to the lobby for the
+   * host to start. Persistent XP carries over; the previous night stays in the
+   * ledger for history.
+   */
+  private rematch(room: Room): void {
+    room.nightSeq += 1;
+    room.playlistIndex = 0;
+    room.game = null;
+    room.settledGames = [];
+    room.awards = [];
+    room.nightCompleted = false;
+    room.seed = randomBytes(12).toString('hex');
+    room.status = 'lobby';
+    if (room.timer) {
+      clearTimeout(room.timer);
+      room.timer = null;
+    }
+    this.db
+      .prepare(`UPDATE rooms SET status = 'lobby', playlist_index = 0, night_seq = ?, seed = ? WHERE id = ?`)
+      .run(room.nightSeq, room.seed, room.id);
+    this.reloadScores(room); // filtered by the new nightSeq → a clean board
   }
 
   private reportContent(room: Room, action: ClientAction, memberId: string): ActionResult {
@@ -761,8 +798,8 @@ export class RoomManager {
 
   private reloadScores(room: Room): void {
     const rows = this.db
-      .prepare(`SELECT game_type, member_id, night_points FROM score_ledger WHERE room_id = ? ORDER BY created_at`)
-      .all(room.id) as Array<{ game_type: GameType; member_id: string; night_points: number }>;
+      .prepare(`SELECT game_type, member_id, night_points FROM score_ledger WHERE room_id = ? AND night_seq = ? ORDER BY created_at`)
+      .all(room.id, room.nightSeq) as Array<{ game_type: GameType; member_id: string; night_points: number }>;
     const byType = new Map<GameType, SettledGame>();
     for (const r of rows) {
       let g = byType.get(r.game_type);
@@ -772,8 +809,8 @@ export class RoomManager {
     room.settledGames = room.playlist.filter((t) => byType.has(t)).map((t) => byType.get(t)!);
 
     const awards = this.db
-      .prepare(`SELECT award_key, title, member_id, detail FROM awards WHERE room_id = ?`)
-      .all(room.id) as Array<{ award_key: string; title: string; member_id: string | null; detail: string }>;
+      .prepare(`SELECT award_key, title, member_id, detail FROM awards WHERE room_id = ? AND night_seq = ?`)
+      .all(room.id, room.nightSeq) as Array<{ award_key: string; title: string; member_id: string | null; detail: string }>;
     room.awards = awards.map((a) => ({
       key: a.award_key,
       title: a.title,
@@ -813,6 +850,7 @@ export class RoomManager {
         timer: null,
         expiresAt: r.expires_at as number,
         nightCompleted: (r.status as string) === 'complete',
+        nightSeq: (r.night_seq as number) ?? 0,
       };
       const members = this.db.prepare(`SELECT * FROM members WHERE room_id = ? ORDER BY seat`).all(room.id) as Array<Record<string, unknown>>;
       for (const m of members) {

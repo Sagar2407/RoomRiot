@@ -34,6 +34,15 @@ export function openDb(path = config.dbPath): DB {
   } catch {
     /* column already exists */
   }
+  // Night sequence: a rematch bumps it so each night's scoreboard counts only its
+  // own games — old nights stay in the ledger for XP/history (plan §6 "Rematch").
+  for (const table of ['rooms', 'score_ledger', 'awards']) {
+    try {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN night_seq INTEGER NOT NULL DEFAULT 0`);
+    } catch {
+      /* column already exists */
+    }
+  }
   return db;
 }
 

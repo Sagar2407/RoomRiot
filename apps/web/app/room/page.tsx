@@ -90,7 +90,7 @@ export default function RoomPage() {
         </div>
       )}
 
-      {projection.status === 'complete' && <Results projection={projection} selfId={selfId} />}
+      {projection.status === 'complete' && <Results projection={projection} selfId={selfId} isHost={isHost} send={send} />}
 
       {projection.status !== 'complete' && projection.status !== 'lobby' && (
         <button
