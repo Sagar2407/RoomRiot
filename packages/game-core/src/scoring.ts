@@ -14,8 +14,16 @@
  * themselves). Ties receive equal placement. Requires n ≥ 2 eligible players.
  */
 import { SCORING_VERSION } from '@roomriot/contracts';
+import type { PlacementStanding } from './types.js';
 
 export { SCORING_VERSION };
+
+/**
+ * Scoring version for placement-based (mixed/classics) nights. Existing party
+ * rooms keep `np-2026-09-1` unchanged; a classics night applies the pure
+ * placement conversion below to every counted game (plan §9.1).
+ */
+export const NP_CLASSICS_VERSION = 'np-classics-v2';
 
 export interface RawEntry {
   memberId: string;
@@ -59,6 +67,33 @@ export function toNightPoints(entries: RawEntry[], max: number): NightPointsEntr
       memberId: e.memberId,
       raw: e.raw,
       performance: round2(performance),
+      placement: round2(placement),
+      nightPoints,
+    };
+  });
+}
+
+/**
+ * Convert native placement standings to Night Points using the pure placement
+ * formula (no performance term), which handles negative/asymmetric native scores
+ * (Teen Patti chips, board positions) without clamping (plan §9):
+ *
+ *   NightPoints = round(100 × (below + (tied − 1) / 2) / (n − 1))
+ *
+ * `rank` is 1-based with ties sharing a rank. With a single eligible player the
+ * result is 0 (placement is undefined for n < 2).
+ */
+export function placementToNightPoints(standings: PlacementStanding[]): NightPointsEntry[] {
+  const n = standings.length;
+  return standings.map((s) => {
+    const below = standings.filter((o) => o.rank > s.rank).length;
+    const tied = standings.filter((o) => o.rank === s.rank).length; // includes self
+    const placement = n < 2 ? 0 : (100 * (below + (tied - 1) / 2)) / (n - 1);
+    const nightPoints = Math.round(placement);
+    return {
+      memberId: s.memberId,
+      raw: s.metric ?? 0,
+      performance: 0,
       placement: round2(placement),
       nightPoints,
     };

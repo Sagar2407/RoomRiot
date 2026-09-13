@@ -3,8 +3,24 @@ import { useEffect, useMemo, useState } from 'react';
 import type { RoomProjection, ClientAction, ActionResult, GameType } from '@roomriot/contracts';
 import { Timer } from './Timer';
 import { Members } from './Members';
+import { SnakesView } from './games/SnakesView';
 
 type Send = (a: Omit<ClientAction, 'actionId'>) => Promise<ActionResult>;
+
+/**
+ * Dispatch to the per-game renderer. New (sequential/board) games get their own
+ * component; the six original party games keep the shared controller below. This
+ * keeps each renderer's React hooks stable instead of branching inside one
+ * component (plan §10 "renderer registered by game type").
+ */
+export function GameView(props: { projection: RoomProjection; send: Send; board?: boolean }) {
+  switch (props.projection.game?.gameType) {
+    case 'snakes_and_ladders':
+      return <SnakesView {...props} />;
+    default:
+      return <PartyGameView {...props} />;
+  }
+}
 
 const TITLES: Record<GameType, string> = {
   majority_report: 'Majority Report',
@@ -13,9 +29,10 @@ const TITLES: Record<GameType, string> = {
   link_up: 'Link Up',
   alibi_club: 'Alibi Club',
   close_call: 'Close Call',
+  snakes_and_ladders: 'Snakes & Ladders',
 };
 
-export function GameView({ projection, send, board }: { projection: RoomProjection; send: Send; board?: boolean }) {
+function PartyGameView({ projection, send, board }: { projection: RoomProjection; send: Send; board?: boolean }) {
   const game = projection.game!;
   const priv = projection.self?.private ?? null;
   const secret = (priv?.secret ?? undefined) as Record<string, unknown> | undefined;

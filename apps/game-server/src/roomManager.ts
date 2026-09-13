@@ -18,6 +18,7 @@ import {
   getGameModule,
   createRng,
   toNightPoints,
+  placementToNightPoints,
   buildScoreboard,
   SCORING_VERSION,
   type BaseGameState,
@@ -44,6 +45,7 @@ import { issueToken } from './tokens.js';
 import { botMoves, isBot } from './bots.js';
 import { Analytics } from './analytics.js';
 import { resolvePlaylist } from './billing.js';
+import { rollDie } from './randomness.js';
 
 const XP_PER_GAME = 20;
 const XP_PER_ACHIEVEMENT = 5;
@@ -340,7 +342,7 @@ export class RoomManager {
     if (!v.ok) return this.recordAndReject(room, action, memberId, mapCode(v.code), v.message);
 
     const rng = createRng(`${g.seed}:${g.state.phase.id}:move`);
-    g.state = mod.reduce(g.state, gameAction, { activeMemberIds: this.activeRoster(room, g), rng });
+    g.state = mod.reduce(g.state, gameAction, { activeMemberIds: this.activeRoster(room, g), rng, rollDie });
     this.persistGame(room, g);
     this.recordAction(room, action, memberId, true, null);
 
@@ -465,7 +467,7 @@ export class RoomManager {
       meta: { phaseKind: endingPhase.kind, round: endingPhase.round },
     });
     const rng = createRng(`${g.seed}:${g.state.phase.id}:advance`);
-    g.state = mod.reduce(g.state, { type: '__advance', reason }, { activeMemberIds: this.activeRoster(room, g), rng });
+    g.state = mod.reduce(g.state, { type: '__advance', reason }, { activeMemberIds: this.activeRoster(room, g), rng, rollDie });
     this.persistGame(room, g);
 
     if (g.state.status === 'complete') {
@@ -485,8 +487,19 @@ export class RoomManager {
     const g = room.game;
     if (!g || g.settled) return;
     const mod = getGameModule(g.gameType);
-    const result = mod.score(g.state);
-    const np = toNightPoints(result.entries, result.max);
+    // Placement games (board/card) convert native standings through the pure
+    // placement adapter; performance games use raw/max (plan §9).
+    let np: Array<{ memberId: string; raw: number; nightPoints: number }>;
+    let awards: Array<{ key: string; title: string; memberId: string | null; detail: string }>;
+    if (mod.resultKind === 'placement' && mod.placement) {
+      const pr = mod.placement(g.state);
+      np = placementToNightPoints(pr.standings);
+      awards = pr.awards ?? [];
+    } else {
+      const result = mod.score(g.state);
+      np = toNightPoints(result.entries, result.max);
+      awards = result.awards ?? [];
+    }
 
     const insertLedger = this.db.prepare(
       `INSERT OR IGNORE INTO score_ledger (settlement_key, room_id, game_instance_id, member_id, game_type, raw, night_points, created_at)
@@ -506,7 +519,7 @@ export class RoomManager {
         const guestId = room.members.get(e.memberId)?.guestId ?? e.memberId;
         insertXp.run(`${room.id}:${g.id}:${e.memberId}:xp_game`, room.id, guestId, e.memberId, 'game_completed', XP_PER_GAME, now);
       }
-      for (const a of result.awards ?? []) {
+      for (const a of awards) {
         insertAward.run(randomUUID(), room.id, g.id, a.key, a.title, a.memberId, a.detail);
         // XP: one 5-point achievement bonus per member per game (capped by key). §6
         if (a.memberId) {

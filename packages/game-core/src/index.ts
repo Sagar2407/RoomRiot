@@ -14,3 +14,8 @@ export type { CloseCallState } from './games/closeCall.js';
 
 export { makeGroups } from './games/linkUp.js';
 export { bandScore } from './games/closeCall.js';
+
+// Indian Classics.
+export * from './boards/snakesBoards.js';
+export { snakesAndLadders, createSnakesState } from './games/snakesAndLadders.js';
+export type { SnakesState } from './games/snakesAndLadders.js';

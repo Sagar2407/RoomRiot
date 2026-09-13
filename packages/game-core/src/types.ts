@@ -94,6 +94,32 @@ export interface ReduceContext {
   /** Members currently connected & active (roster locked at game start). */
   activeMemberIds: string[];
   rng: RNG;
+  /**
+   * Server-authoritative cryptographic d6 (1–6), provided for board/dice games.
+   * Call it only when a roll is actually needed; the result is baked into the
+   * persisted state snapshot, so a restart loads the applied outcome and never
+   * rerolls (see docs/adr/0001-indian-classics.md, plan §4.5).
+   */
+  rollDie?: () => number;
+}
+
+/** One seat's finishing position in a placement (ranking) game. Ties share a rank. */
+export interface PlacementStanding {
+  memberId: string;
+  /** 1-based finishing rank; tied seats share the same rank. */
+  rank: number;
+  /** Native metric for display (final board position, token progress, net chips). */
+  metric?: number;
+}
+
+/**
+ * A placement result for ranking games (Snakes, Ludo, Teen Patti, Judgement),
+ * converted to Night Points by the room's scoring adapter — never through the
+ * performance-based `toNightPoints()` path (plan §9).
+ */
+export interface PlacementResult {
+  standings: PlacementStanding[];
+  awards?: Array<{ key: string; title: string; memberId: string | null; detail: string }>;
 }
 
 export type Validation = { ok: true } | { ok: false; code: ValidationCode; message: string };
@@ -114,6 +140,19 @@ export interface GameScoreResult {
 export interface GameModule<S extends BaseGameState = BaseGameState> {
   type: GameType;
   manifest: GameManifest;
+  /**
+   * How the module collects input. 'simultaneous' (the default, all six original
+   * games) collects from every active seat at once; 'sequential' games (board/card
+   * games) expect one actor per phase — the active seat, independent of who else is
+   * connected (plan §4.1).
+   */
+  interactionMode?: 'simultaneous' | 'sequential';
+  /**
+   * How results convert to Night Points. 'performance' (default) uses raw/max via
+   * `toNightPoints()`; 'placement' produces native standings converted by the
+   * placement adapter (plan §9). A placement module implements `placement()`.
+   */
+  resultKind?: 'performance' | 'placement';
   /** Choose the content this instance needs from the published bank. */
   selectContent(all: ContentItem[], rng: RNG, memberCount: number): ContentItem[];
   initialState(ctx: InitContext): S;
@@ -123,7 +162,10 @@ export interface GameModule<S extends BaseGameState = BaseGameState> {
   allInputsIn(state: S, activeMemberIds: string[]): boolean;
   projectPublic(state: S): GamePublicView;
   projectPrivate(state: S, memberId: string): GamePrivateView;
+  /** Performance scoring (raw/max). Placement games may return an empty result. */
   score(state: S): GameScoreResult;
+  /** Native standings for placement games; required when resultKind === 'placement'. */
+  placement?(state: S): PlacementResult;
 }
 
 export function isAdvance(a: ReduceAction): a is AdvanceAction {

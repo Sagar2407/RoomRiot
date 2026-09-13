@@ -85,6 +85,11 @@ export function botMoves(gameType: GameType, pub: GamePublicView, priv: GamePriv
       const rangeMax = (pub.prompt as { rangeMax?: number } | undefined)?.rangeMax ?? 20;
       return [{ type: 'submit_estimate', payload: { value: Math.floor(Math.random() * (rangeMax + 1)) } }];
     }
+    case 'snakes_and_ladders': {
+      // runBots only reaches the active seat (awaitingInput); it simply rolls.
+      if (pub.phaseKind !== 'rolling') return [];
+      return [{ type: 'roll', payload: {} }];
+    }
     default:
       return [];
   }
