@@ -65,7 +65,12 @@ export function Lobby({
       </div>
 
       <div className="card stack">
-        <h2>Tonight’s playlist</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+          <h2 style={{ margin: 0 }}>Tonight’s playlist</h2>
+          <span className={`pill ${projection.tier === 'party_pass' ? '' : 'grey'}`}>
+            {projection.tier === 'party_pass' ? 'Party Pass' : 'Free night'}
+          </span>
+        </div>
         {projection.playlist.map((g) => (
           <div key={g} style={{ display: 'flex', justifyContent: 'space-between' }}>
             <strong>{TITLES[g]}</strong>

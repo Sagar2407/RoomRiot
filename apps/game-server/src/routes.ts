@@ -7,6 +7,14 @@ import type { FastifyInstance } from 'fastify';
 import { CreateRoomRequestSchema, JoinRoomRequestSchema } from '@roomriot/contracts';
 import type { RoomManager } from './roomManager.js';
 import type { Analytics } from './analytics.js';
+import type { DB } from './db.js';
+import { config } from './config.js';
+import {
+  entitlementStatus,
+  processBillingEvent,
+  verifySignature,
+  type BillingEvent,
+} from './billing.js';
 import { verifyToken, type GuestClaims, type MemberClaims, type DisplayClaims } from './tokens.js';
 
 function guestIdFrom(token: string | undefined): string {
@@ -14,11 +22,55 @@ function guestIdFrom(token: string | undefined): string {
   return claims?.typ === 'guest' && claims.guestId ? claims.guestId : `guest:${randomUUID()}`;
 }
 
-export function registerRoutes(app: FastifyInstance, rm: RoomManager, analytics: Analytics): void {
+export function registerRoutes(app: FastifyInstance, rm: RoomManager, analytics: Analytics, db: DB): void {
   app.get('/health', async () => ({ ok: true, service: 'room-riot-game-server' }));
 
   // Operations funnel (blueprint §16). Aggregates only — no per-user data.
   app.get('/metrics', async () => analytics.funnel());
+
+  // ---- Billing & entitlements (blueprint §14) ----------------------------
+
+  // Host setup reads this to show the current tier + offer. Viewing it is the
+  // offer impression.
+  app.get('/entitlements', async (req) => {
+    const guestId = guestIdFrom(bearer(req.headers.authorization) ?? (req.query as { guestToken?: string })?.guestToken);
+    analytics.emit('offer_viewed', { memberId: guestId, meta: { product: 'party_pass' } });
+    return entitlementStatus(db, guestId);
+  });
+
+  // Verified provider webhook → idempotent entitlement change.
+  app.post('/billing/webhook', async (req, reply) => {
+    const raw = (req as unknown as { rawBody?: string }).rawBody ?? '';
+    const sig = req.headers['x-roomriot-signature'] as string | undefined;
+    if (!verifySignature(raw, sig)) return reply.code(400).send({ error: 'bad_signature' });
+    const event = req.body as BillingEvent;
+    const result = processBillingEvent(db, analytics, event);
+    if (!result.ok) return reply.code(400).send({ error: 'unprocessable_event' });
+    return reply.send({ received: true, duplicate: result.duplicate ?? false });
+  });
+
+  // Dev-only: simulate a completed checkout so the flow runs without Stripe.
+  app.post('/billing/dev-checkout', async (req, reply) => {
+    if (!config.enableDevCheckout) return reply.code(404).send({ error: 'not_found' });
+    const guestId = guestIdFrom((req.body as { guestToken?: string })?.guestToken);
+    const event: BillingEvent = {
+      id: `dev_${randomUUID()}`,
+      type: 'payment.succeeded',
+      data: { guestId, product: 'party_pass', platform: 'web' },
+    };
+    processBillingEvent(db, analytics, event);
+    return reply.send(entitlementStatus(db, guestId));
+  });
+
+  // Support flow (blueprint §15).
+  app.post('/support', async (req, reply) => {
+    const body = (req.body ?? {}) as { email?: string; message?: string; roomId?: string };
+    if (!body.message || body.message.trim().length === 0) return reply.code(400).send({ error: 'message_required' });
+    db.prepare(
+      `INSERT INTO support_requests (id, email, message, room_ref, status, created_at) VALUES (?,?,?,?, 'open', ?)`,
+    ).run(randomUUID(), (body.email ?? '').slice(0, 200), body.message.slice(0, 4000), body.roomId ? analytics.ref(body.roomId) : null, Date.now());
+    return reply.send({ ok: true });
+  });
 
   app.post('/rooms', async (req, reply) => {
     const parsed = CreateRoomRequestSchema.safeParse(req.body);

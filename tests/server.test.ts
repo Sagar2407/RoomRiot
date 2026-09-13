@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { buildServer, type BuiltServer } from '@roomriot/game-server/src/index.ts';
 import { RoomManager } from '@roomriot/game-server/src/roomManager.ts';
+import { processBillingEvent } from '@roomriot/game-server/src/billing.ts';
 
 let built: BuiltServer | null = null;
 afterEach(async () => {
@@ -60,6 +61,13 @@ describe('a full six-game night runs unattended and settles once (blueprint §5,
     built = await buildServer(':memory:');
     const { rm, db, io } = built;
 
+    // A Party Pass so the full six-game playlist is unlocked (a free host would
+    // be capped to the rotating trio, blueprint §14).
+    processBillingEvent(db, built.analytics, {
+      id: 'evt_full_night',
+      type: 'payment.succeeded',
+      data: { guestId: 'bot:host', product: 'party_pass', platform: 'web' },
+    });
     // A bot host so the whole table plays unattended (a socketless human host is
     // correctly treated as disconnected and would not submit).
     const { credentials: host } = rm.createRoom(

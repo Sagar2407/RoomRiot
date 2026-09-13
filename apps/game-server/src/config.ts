@@ -19,4 +19,17 @@ export const config = {
   webOrigin: process.env.WEB_ORIGIN ?? 'http://localhost:3000',
   /** Blueprint §10: expire abandoned rooms after a two-hour inactivity window. */
   roomTtlMs: Number(process.env.ROOM_TTL_MS ?? 2 * 60 * 60 * 1000),
+
+  // ---- Billing (blueprint §14). Stripe drops in behind these seams. --------
+  /** Secret used to verify signed billing webhook events (Stripe: webhook signing secret). */
+  billingWebhookSecret: process.env.BILLING_WEBHOOK_SECRET ?? process.env.ROOM_RIOT_SECRET ?? 'dev-billing-secret',
+  /**
+   * Enables POST /billing/dev-checkout, which simulates a completed purchase so
+   * the full entitlement flow is runnable without a Stripe account. Off in
+   * production. Defaults on unless NODE_ENV=production.
+   */
+  enableDevCheckout: (process.env.ENABLE_DEV_CHECKOUT ?? (process.env.NODE_ENV === 'production' ? 'false' : 'true')) === 'true',
+  /** Party Pass: $4.99 for 24 hours from activation. */
+  partyPassPriceUsd: Number(process.env.PARTY_PASS_PRICE ?? 4.99),
+  partyPassHours: Number(process.env.PARTY_PASS_HOURS ?? 24),
 };

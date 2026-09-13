@@ -32,6 +32,7 @@ import {
   type MemberView,
   type Award,
   type GameType,
+  type Tier,
   type ClientAction,
   type ActionResult,
   type ActionRejectionCode,
@@ -42,6 +43,7 @@ import { config } from './config.js';
 import { issueToken } from './tokens.js';
 import { botMoves, isBot } from './bots.js';
 import { Analytics } from './analytics.js';
+import { resolvePlaylist } from './billing.js';
 
 const XP_PER_GAME = 20;
 const XP_PER_ACHIEVEMENT = 5;
@@ -72,6 +74,7 @@ interface Room {
   settings: RoomSettings;
   playlist: GameType[];
   playlistIndex: number;
+  tier: Tier;
   seed: string;
   members: Map<string, Member>;
   game: GameRuntime | null;
@@ -120,6 +123,10 @@ export class RoomManager {
 
   createRoom(nickname: string, settings: Partial<RoomSettings> | undefined, guestId: string) {
     const merged = RoomSettingsSchema.parse({ ...DEFAULT_SETTINGS, ...(settings ?? {}) });
+    // Free tier gets a complete short night of rotating games; a Party Pass
+    // unlocks the requested playlist. Resolved once, here — never mid-game (§14).
+    const { playlist, tier } = resolvePlaylist(this.db, guestId, merged.playlist);
+    merged.playlist = playlist;
     const id = randomUUID();
     const code = this.freshCode();
     const now = Date.now();
@@ -129,8 +136,9 @@ export class RoomManager {
       hostMemberId: '',
       status: 'lobby',
       settings: merged,
-      playlist: merged.playlist,
+      playlist,
       playlistIndex: 0,
+      tier,
       seed: randomBytes(12).toString('hex'),
       members: new Map(),
       game: null,
@@ -143,10 +151,10 @@ export class RoomManager {
     };
     this.db
       .prepare(
-        `INSERT INTO rooms (id, code, host_member_id, status, settings_json, playlist_json, playlist_index, scoring_version, seed, state_version, created_at, expires_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO rooms (id, code, host_member_id, status, settings_json, playlist_json, playlist_index, scoring_version, seed, tier, state_version, created_at, expires_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
-      .run(id, code, '', room.status, JSON.stringify(merged), JSON.stringify(room.playlist), 0, SCORING_VERSION, room.seed, 0, now, room.expiresAt);
+      .run(id, code, '', room.status, JSON.stringify(merged), JSON.stringify(room.playlist), 0, SCORING_VERSION, room.seed, tier, 0, now, room.expiresAt);
     this.rooms.set(id, room);
 
     const member = this.insertMember(room, guestId, nickname, 'host');
@@ -567,6 +575,7 @@ export class RoomManager {
       status: room.status,
       settings: room.settings,
       scoringVersion: SCORING_VERSION,
+      tier: room.tier,
       hostMemberId: room.hostMemberId,
       members,
       playlist: room.playlist,
@@ -701,6 +710,7 @@ export class RoomManager {
         settings: JSON.parse(r.settings_json as string),
         playlist: JSON.parse(r.playlist_json as string),
         playlistIndex: r.playlist_index as number,
+        tier: ((r.tier as Tier) ?? 'free'),
         seed: r.seed as string,
         members: new Map(),
         game: null,

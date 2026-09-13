@@ -105,6 +105,8 @@ export class Analytics {
     const joinSucceeded = count('join_succeeded');
     const roomsActivated = distinctRooms('game_completed'); // reached ≥1 scored reveal
     const nightsCompleted = distinctRooms('session_completed');
+    const offersViewed = count('offer_viewed');
+    const purchasesVerified = count('purchase_verified');
 
     const rate = (num: number, den: number) => (den > 0 ? Math.round((num / den) * 1000) / 10 : null);
 
@@ -119,11 +121,14 @@ export class Analytics {
         nights_completed: nightsCompleted,
         reconnects_succeeded: count('reconnect_succeeded'),
         content_reported: count('content_reported'),
+        offers_viewed: offersViewed,
+        purchases_verified: purchasesVerified,
       },
       rates_pct: {
         join_success: rate(joinSucceeded, joinStarted),
         room_activation: rate(roomsActivated, roomsCreated),
         night_completion: rate(nightsCompleted, roomsActivated),
+        purchase_conversion: rate(purchasesVerified, offersViewed),
       },
       targets: METRIC_TARGETS,
     };

@@ -21,6 +21,12 @@ export function openDb(path = config.dbPath): DB {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   migrate(db);
+  // Backfill columns added after a DB was first created (dev convenience).
+  try {
+    db.exec(`ALTER TABLE rooms ADD COLUMN tier TEXT NOT NULL DEFAULT 'free'`);
+  } catch {
+    /* column already exists */
+  }
   return db;
 }
 
@@ -36,6 +42,7 @@ function migrate(db: DB): void {
       playlist_index INTEGER NOT NULL DEFAULT 0,
       scoring_version TEXT NOT NULL,
       seed          TEXT NOT NULL,
+      tier          TEXT NOT NULL DEFAULT 'free',
       state_version INTEGER NOT NULL DEFAULT 0,
       created_at    INTEGER NOT NULL,
       expires_at    INTEGER NOT NULL
@@ -147,5 +154,38 @@ function migrate(db: DB): void {
     );
     CREATE INDEX IF NOT EXISTS analytics_event ON analytics_events(event);
     CREATE INDEX IF NOT EXISTS analytics_room ON analytics_events(room_ref);
+
+    -- Entitlements (blueprint §9, §14). One row per verified purchase; state and
+    -- validity interval drive access. Keyed by the buyer's identity (guest now,
+    -- account later).
+    CREATE TABLE IF NOT EXISTS entitlements (
+      id           TEXT PRIMARY KEY,
+      guest_id     TEXT NOT NULL,
+      product      TEXT NOT NULL,
+      platform     TEXT NOT NULL,
+      source_event TEXT NOT NULL,
+      state        TEXT NOT NULL,
+      valid_from   INTEGER NOT NULL,
+      valid_until  INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS entitlements_guest ON entitlements(guest_id);
+
+    -- Verified billing events, for idempotent entitlement changes (§14).
+    CREATE TABLE IF NOT EXISTS billing_events (
+      event_id   TEXT PRIMARY KEY,
+      type       TEXT NOT NULL,
+      guest_id   TEXT,
+      created_at INTEGER NOT NULL
+    );
+
+    -- Support requests (§15 support flow).
+    CREATE TABLE IF NOT EXISTS support_requests (
+      id         TEXT PRIMARY KEY,
+      email      TEXT,
+      message    TEXT NOT NULL,
+      room_ref   TEXT,
+      status     TEXT NOT NULL DEFAULT 'open',
+      created_at INTEGER NOT NULL
+    );
   `);
 }

@@ -29,13 +29,23 @@ export async function buildServer(dbPath?: string): Promise<BuiltServer> {
     credentials: true,
   });
 
+  // Keep the raw JSON body available for billing webhook signature verification.
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
+    (req as unknown as { rawBody?: string }).rawBody = typeof body === 'string' ? body : String(body);
+    try {
+      done(null, body && (body as string).length ? JSON.parse(body as string) : {});
+    } catch (err) {
+      done(err as Error, undefined);
+    }
+  });
+
   const io = new IOServer(app.server, {
     cors: { origin: config.webOrigin === '*' ? true : [config.webOrigin], credentials: true },
   });
 
   const analytics = new Analytics(db, config.secret);
   const rm = new RoomManager(db, io, analytics);
-  registerRoutes(app, rm, analytics);
+  registerRoutes(app, rm, analytics, db);
   registerSocket(io, rm);
 
   return { app, io, db, rm, analytics };

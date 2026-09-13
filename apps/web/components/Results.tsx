@@ -37,11 +37,23 @@ export function Results({ projection, selfId }: { projection: RoomProjection; se
         </div>
       )}
 
-      <a className="btn ghost" href="/" style={{ textAlign: 'center', textDecoration: 'none' }}>
+      {projection.tier !== 'party_pass' && (
+        <div className="card stack center">
+          <strong>Enjoyed the night?</strong>
+          <p className="muted small" style={{ margin: 0 }}>
+            A Party Pass unlocks all six games for your next 24 hours of hosting. Guests always play free.
+          </p>
+          <a className="btn" href="/host" style={{ textDecoration: 'none' }}>
+            See the Party Pass
+          </a>
+        </div>
+      )}
+
+      <a className="btn ghost" href="/host" style={{ textAlign: 'center', textDecoration: 'none' }}>
         Play again with this crew
       </a>
       <p className="small muted center">
-        No photos, recordings, or publishing. Your recap stays private to the room.
+        No photos, recordings, or publishing. Your recap stays private to the room. · <a href="/support">Support</a>
       </p>
     </div>
   );

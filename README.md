@@ -24,7 +24,10 @@ Everything here runs with `npm install` — no external accounts required. Ident
 | **Reporting & moderation** — in‑room report control, scoped private reports | ✅ (Phase 3/4) |
 | **Analytics funnel** — §16 event taxonomy + `/metrics` endpoint + ops page | ✅ (Phase 4) |
 | **Burst‑load harness** — 50 rooms × 8 players, ack‑latency + reconnect gate | ✅ (Phase 4) |
-| Payments, runtime AI, PWA/service worker, native iOS | ⛔ deferred (see roadmap) |
+| **Party Pass + free tier** — 3 rotating free games, 24h pass, tier gate | ✅ (Phase 5) |
+| **Billing webhook** — HMAC‑verified, idempotent, refund/expiry (Stripe‑swappable) | ✅ (Phase 5) |
+| **Support flow** — `/support` capture + page | ✅ (Phase 5) |
+| Real Stripe account, runtime AI, PWA/service worker, native iOS | ⛔ deferred (see roadmap) |
 
 ---
 
@@ -71,6 +74,21 @@ ROOMS=50 PLAYERS=8 SERVER=http://localhost:4000 npm run loadtest --workspace @ro
 
 The server emits the §16 event taxonomy at each lifecycle point, storing only opaque refs, versions, roster sizes, durations and reason codes — never answers, drinking data, or nicknames. Players can report the current prompt at any time; reports are scoped, stored pseudonymously with a 30‑day retention window, and never surfaced to the room.
 
+### Monetization (Phase 5)
+
+Guests always join free. A free night is three rotating games; the **Party Pass** ($4.99 / 24h) unlocks all six. The tier is resolved once at room creation — never mid‑game.
+
+```bash
+# What the host sees (also records the offer impression)
+curl http://localhost:4000/entitlements
+
+# Simulate a completed purchase without Stripe (dev only)
+curl -X POST http://localhost:4000/billing/dev-checkout \
+  -H 'content-type: application/json' -d '{"guestToken":"<token>"}'
+```
+
+`POST /billing/webhook` verifies an HMAC signature (`x-roomriot-signature: t=…,v1=…` over `${t}.${body}`) and applies entitlement changes idempotently by event id, including refund→expiry. To go live, replace `verifySignature` in `apps/game-server/src/billing.ts` with `stripe.webhooks.constructEvent` and map Stripe's event types — the entitlement logic is unchanged.
+
 ---
 
 ## The plan of execution, phase by phase
@@ -103,9 +121,9 @@ Playlist, Night Points, profiles/XP claim, recap, display mode, reporting, acces
 
 **Measured on the §10 load gate** (50 rooms × 8 players = 400 connections, synchronized answer burst, in‑memory DB, single dev instance): **400/400 acks accepted, p95 ack ≈ 268 ms** (target < 500 ms), **40/40 reconnects resynced**, zero lost acknowledged actions. Reproduce with `npm run loadtest` (see below). Numbers are a local dev measurement, not a capacity guarantee.
 
-### Phase 5 — Paid soft launch *(weeks 11–12)* — next
-Party Pass, verified Stripe webhooks, support flow, production monitoring, content cadence.
-**To build:** `entitlements` + `/billing/webhook`, the free‑tier gate (3 rotating games), and a genuine CMS before the 10th game (§11).
+### Phase 5 — Paid soft launch *(weeks 11–12)* — **IN PROGRESS (entitlements + webhook + support done)**
+Party Pass, verified webhooks, support flow, production monitoring, content cadence.
+→ *Delivered: a free tier (three **rotating** games, a complete short night) and a **Party Pass** (all six games, 24h from activation); a **provider‑agnostic billing webhook** — HMAC‑signature verified, idempotent by event id, with refund→expiry — plus a dev‑checkout that runs the whole flow without a Stripe account; entitlement lookup; a **support** endpoint + page; and purchase metrics (`offers_viewed`, `purchases_verified`, `purchase_conversion`) in `/metrics`. The tier is resolved once at room creation, so **no payment screen ever interrupts a started night** (§14). **Still to add:** a real Stripe account + `stripe.webhooks.constructEvent` (a one‑function swap at `verifySignature`), theme packs / Host Club, and cohort repeat‑purchase analysis.*
 
 ### Phase 6 — Expansion — later
 Crew Lore, Secret Sidequests, selected "Next" games, stronger content tooling.
@@ -163,7 +181,7 @@ Worked example (raw 240/180/180/60 out of 300) → **85 / 58 / 58 / 15**, verifi
 
 ## Data model (SQLite → Postgres)
 
-`rooms`, `members` (one active seat per identity), `game_instances` (JSON snapshot + `deadline_at`), `actions` (idempotency), `score_ledger` (immutable, unique settlement key), `awards`, `xp_ledger` (idempotent by award key), `reports` (scoped, retention‑dated), and `analytics_events` (opaque refs). The schema is kept close to the §9 Postgres target so migrating to Supabase is a translation, not a redesign.
+`rooms`, `members` (one active seat per identity), `game_instances` (JSON snapshot + `deadline_at`), `actions` (idempotency), `score_ledger` (immutable, unique settlement key), `awards`, `xp_ledger` (idempotent by award key), `reports` (scoped, retention‑dated), `analytics_events` (opaque refs), `entitlements` + `billing_events` (idempotent purchases), and `support_requests`. The schema is kept close to the §9 Postgres target so migrating to Supabase is a translation, not a redesign.
 
 ## Known simplifications in this slice
 
@@ -177,7 +195,8 @@ Honest notes for the next contributor — none change the game math, all are cal
 - Option ordering is a single deterministic server shuffle (stable IDs decide scoring), not per‑viewer.
 - **Reporting** captures scoped reports + emits the event; a moderator queue UI, block, and per‑item kill‑switch are the next moderation step.
 - **Analytics** is first‑party SQLite with a simple funnel; no external analytics vendor.
-- No PWA/service worker, payments, runtime AI, uploads, guest→account claim, or account deletion yet — all deferred by design (§7, §12–14).
+- **Billing** is provider‑agnostic with an HMAC‑signed webhook + dev‑checkout; wiring a real Stripe account is a one‑function swap at `verifySignature` (no live payments taken here).
+- No PWA/service worker, runtime AI, uploads, guest→account claim, or account deletion yet — all deferred by design (§7, §12–14).
 
 ---
 
