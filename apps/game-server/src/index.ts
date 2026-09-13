@@ -10,12 +10,14 @@ import { openDb, type DB } from './db.js';
 import { RoomManager } from './roomManager.js';
 import { registerRoutes } from './routes.js';
 import { registerSocket } from './socket.js';
+import { Analytics } from './analytics.js';
 
 export interface BuiltServer {
   app: FastifyInstance;
   io: IOServer;
   db: DB;
   rm: RoomManager;
+  analytics: Analytics;
 }
 
 export async function buildServer(dbPath?: string): Promise<BuiltServer> {
@@ -31,11 +33,12 @@ export async function buildServer(dbPath?: string): Promise<BuiltServer> {
     cors: { origin: config.webOrigin === '*' ? true : [config.webOrigin], credentials: true },
   });
 
-  const rm = new RoomManager(db, io);
-  registerRoutes(app, rm);
+  const analytics = new Analytics(db, config.secret);
+  const rm = new RoomManager(db, io, analytics);
+  registerRoutes(app, rm, analytics);
   registerSocket(io, rm);
 
-  return { app, io, db, rm };
+  return { app, io, db, rm, analytics };
 }
 
 // Only auto-listen when run directly (tests import buildServer instead).

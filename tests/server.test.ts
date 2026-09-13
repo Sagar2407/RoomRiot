@@ -91,12 +91,25 @@ describe('a full six-game night runs unattended and settles once (blueprint §5,
     expect(ledgerBefore).toBe(6 * 6); // 6 games × 6 members
 
     // Simulate a process restart: a fresh RoomManager rehydrates from the same DB.
-    const rm2 = new RoomManager(db, io);
+    const rm2 = new RoomManager(db, io, built.analytics);
     const ledgerAfter = (db.prepare('SELECT count(*) AS c FROM score_ledger WHERE room_id = ?').get(host.roomId) as { c: number }).c;
     expect(ledgerAfter).toBe(ledgerBefore); // settlement is not repeated
     const reboard = rm2.resync(host.memberId, host.roomId)!;
     expect(reboard.scoreboard.reduce((s, l) => s + l.total, 0)).toBe(
       finalProjection.scoreboard.reduce((s, l) => s + l.total, 0),
     );
+
+    // XP (blueprint §6): 20 per completed game → ≥120 across six games.
+    for (const line of finalProjection.scoreboard) {
+      expect(line.xp ?? 0).toBeGreaterThanOrEqual(120);
+    }
+
+    // Analytics funnel (blueprint §16) reflects the night.
+    const funnel = built.analytics.funnel();
+    expect(funnel.counts.rooms_created).toBeGreaterThanOrEqual(1);
+    expect(funnel.counts.games_completed).toBe(6);
+    expect(funnel.counts.rooms_activated).toBe(1);
+    expect(funnel.counts.nights_completed).toBe(1);
+    expect(funnel.rates_pct.room_activation).toBe(100);
   });
 });

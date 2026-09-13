@@ -8,6 +8,7 @@ import { Lobby } from '../../components/Lobby';
 import { GameView } from '../../components/GameView';
 import { Results } from '../../components/Results';
 import { Scoreboard } from '../../components/Scoreboard';
+import { ReportButton } from '../../components/ReportButton';
 
 export default function RoomPage() {
   const router = useRouter();
@@ -65,7 +66,12 @@ export default function RoomPage() {
         <Lobby projection={projection} isHost={isHost} memberToken={creds.memberToken} send={send} />
       )}
 
-      {projection.status === 'in_game' && <GameView projection={projection} send={send} />}
+      {projection.status === 'in_game' && (
+        <>
+          <GameView projection={projection} send={send} />
+          <ReportButton send={send} />
+        </>
+      )}
 
       {projection.status === 'intermission' && (
         <div className="stack">

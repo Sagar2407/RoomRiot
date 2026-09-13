@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { CreateRoomRequestSchema, JoinRoomRequestSchema } from '@roomriot/contracts';
 import type { RoomManager } from './roomManager.js';
+import type { Analytics } from './analytics.js';
 import { verifyToken, type GuestClaims, type MemberClaims, type DisplayClaims } from './tokens.js';
 
 function guestIdFrom(token: string | undefined): string {
@@ -13,8 +14,11 @@ function guestIdFrom(token: string | undefined): string {
   return claims?.typ === 'guest' && claims.guestId ? claims.guestId : `guest:${randomUUID()}`;
 }
 
-export function registerRoutes(app: FastifyInstance, rm: RoomManager): void {
+export function registerRoutes(app: FastifyInstance, rm: RoomManager, analytics: Analytics): void {
   app.get('/health', async () => ({ ok: true, service: 'room-riot-game-server' }));
+
+  // Operations funnel (blueprint §16). Aggregates only — no per-user data.
+  app.get('/metrics', async () => analytics.funnel());
 
   app.post('/rooms', async (req, reply) => {
     const parsed = CreateRoomRequestSchema.safeParse(req.body);
@@ -28,6 +32,7 @@ export function registerRoutes(app: FastifyInstance, rm: RoomManager): void {
     const parsed = JoinRoomRequestSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_request', detail: parsed.error.flatten() });
     const guestId = guestIdFrom(parsed.data.guestToken);
+    analytics.emit('join_started', { meta: { hasCode: !!parsed.data.code } });
     const result = rm.joinRoom(parsed.data.code, parsed.data.nickname, guestId);
     if ('error' in result) return reply.code(404).send({ error: 'room_not_found' });
     return reply.send(result.credentials);

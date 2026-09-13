@@ -145,6 +145,8 @@ export interface ScoreLine {
   total: number;
   /** True when the member has a valid result in every counted game (§6). */
   official: boolean;
+  /** Persistent XP earned this night (20/game + 5/achievement, §6). */
+  xp?: number;
 }
 
 /**

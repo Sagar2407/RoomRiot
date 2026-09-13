@@ -20,6 +20,10 @@ Everything here runs with `npm install` — no external accounts required. Ident
 | **Web client** — home/host/join, phone controller per game, shared TV board, tournament & recap | ✅ Next.js |
 | **Fictional players** — practice round + full unattended self‑test | ✅ |
 | **Reviewed content bank** — starter prompts for all six games (server‑only answers) | ✅ 37 items |
+| **Persistent XP** — 20/game + 5/achievement, shown on the scoreboard | ✅ (Phase 3) |
+| **Reporting & moderation** — in‑room report control, scoped private reports | ✅ (Phase 3/4) |
+| **Analytics funnel** — §16 event taxonomy + `/metrics` endpoint + ops page | ✅ (Phase 4) |
+| **Burst‑load harness** — 50 rooms × 8 players, ack‑latency + reconnect gate | ✅ (Phase 4) |
 | Payments, runtime AI, PWA/service worker, native iOS | ⛔ deferred (see roadmap) |
 
 ---
@@ -51,7 +55,21 @@ Then open <http://localhost:3000>:
 npm test
 ```
 
-Covers the scoring formula (including the blueprint's worked example and tie handling), every game driven to completion within score bounds, Close Call boundary bands, Link Up pairing (no self‑pairs, odd‑roster trio), Alibi Club secrecy, action idempotency, projection authorization, and a **full six‑game night that settles exactly once and survives a simulated restart**.
+Covers the scoring formula (including the blueprint's worked example and tie handling), every game driven to completion within score bounds, Close Call boundary bands, Link Up pairing (no self‑pairs, odd‑roster trio), Alibi Club secrecy, action idempotency, projection authorization, reporting + analytics privacy, XP awards, and a **full six‑game night that settles exactly once and survives a simulated restart**.
+
+### Beta instrumentation & load (Phase 4)
+
+```bash
+# Funnel (aggregate only — no per-user data)
+curl http://localhost:4000/metrics
+# …or open the ops page
+open http://localhost:3000/metrics
+
+# Burst-load gate: start the server, then
+ROOMS=50 PLAYERS=8 SERVER=http://localhost:4000 npm run loadtest --workspace @roomriot/game-server
+```
+
+The server emits the §16 event taxonomy at each lifecycle point, storing only opaque refs, versions, roster sizes, durations and reason codes — never answers, drinking data, or nicknames. Players can report the current prompt at any time; reports are scoped, stored pseudonymously with a 30‑day retention window, and never surfaced to the room.
 
 ---
 
@@ -74,14 +92,16 @@ The remaining five games on a **shared game‑module contract** (`manifest / sel
 **Exit gate:** every game completes across supported rosters; hidden information never reaches other clients.
 → *All six modules implemented; Alibi Club's hidden role/location is asserted absent from public projections in tests.*
 
-### Phase 3 — A complete night *(weeks 7–8)* — **DONE for the slice**
+### Phase 3 — A complete night *(weeks 7–8)* — **DONE**
 Playlist, Night Points, profiles/XP claim, recap, display mode, reporting, accessibility pass.
 **Exit gate:** a 35‑minute night runs without developer intervention on mixed devices.
-→ *Playlist, Night Points tournament, per‑game breakdown, awards, Midnight‑Edition recap, and the read‑only TV board are in. **Still to add:** persistent XP + account claim, in‑room report/block controls, and a full accessibility audit (reduced‑motion and slower‑timer settings are wired via `timerScale`).*
+→ *Playlist, Night Points tournament, per‑game breakdown, awards, Midnight‑Edition recap, read‑only TV board, **persistent XP** (20/game + 5/achievement, shown on the scoreboard), and an **in‑room report control** are all in. Reduced‑motion and slower‑timer accessibility are wired via `timerScale`. **Still to add:** guest→account claim + a full screen‑reader audit.*
 
-### Phase 4 — Private beta *(weeks 9–10)* — next
+### Phase 4 — Private beta *(weeks 9–10)* — **IN PROGRESS (instrumentation + load done)**
 ≥30 observed/instrumented rooms, content revisions, recovery and burst‑load work.
-**To build:** the event taxonomy (§16: `room_created`, `join_*`, `game_*`, `reconnect_*`, `session_completed`, …), a dashboard, and a 50‑room × 8‑player load gate.
+→ *Delivered: the full §16 **event taxonomy** (`room_created`, `join_started`/`join_succeeded`, `game_started`, `phase_completed`, `game_completed`, `session_completed`, `reconnect_succeeded`, `content_reported`), a `GET /metrics` **funnel** with the §16 targets, an ops page at `/metrics`, and the **burst‑load harness** below. **Still to add:** run ≥30 real rooms, content revisions from skip/report data, and a scheduler‑backed outage pause.*
+
+**Measured on the §10 load gate** (50 rooms × 8 players = 400 connections, synchronized answer burst, in‑memory DB, single dev instance): **400/400 acks accepted, p95 ack ≈ 268 ms** (target < 500 ms), **40/40 reconnects resynced**, zero lost acknowledged actions. Reproduce with `npm run loadtest` (see below). Numbers are a local dev measurement, not a capacity guarantee.
 
 ### Phase 5 — Paid soft launch *(weeks 11–12)* — next
 Party Pass, verified Stripe webhooks, support flow, production monitoring, content cadence.
@@ -143,7 +163,7 @@ Worked example (raw 240/180/180/60 out of 300) → **85 / 58 / 58 / 15**, verifi
 
 ## Data model (SQLite → Postgres)
 
-`rooms`, `members` (one active seat per identity), `game_instances` (JSON snapshot + `deadline_at`), `actions` (idempotency), `score_ledger` (immutable, unique settlement key), `awards`. The schema is kept close to the §9 Postgres target so migrating to Supabase is a translation, not a redesign.
+`rooms`, `members` (one active seat per identity), `game_instances` (JSON snapshot + `deadline_at`), `actions` (idempotency), `score_ledger` (immutable, unique settlement key), `awards`, `xp_ledger` (idempotent by award key), `reports` (scoped, retention‑dated), and `analytics_events` (opaque refs). The schema is kept close to the §9 Postgres target so migrating to Supabase is a translation, not a redesign.
 
 ## Known simplifications in this slice
 
@@ -155,7 +175,9 @@ Honest notes for the next contributor — none change the game math, all are cal
 - **Link Up** a disconnected partner scores the round as no‑match rather than the per‑member void variant.
 - **Alibi Club** enforces its ≥5 recommendation softly (it still runs with 4 for testing).
 - Option ordering is a single deterministic server shuffle (stable IDs decide scoring), not per‑viewer.
-- No PWA/service worker, payments, runtime AI, uploads, or account deletion yet — all deferred by design (§7, §12–14).
+- **Reporting** captures scoped reports + emits the event; a moderator queue UI, block, and per‑item kill‑switch are the next moderation step.
+- **Analytics** is first‑party SQLite with a simple funnel; no external analytics vendor.
+- No PWA/service worker, payments, runtime AI, uploads, guest→account claim, or account deletion yet — all deferred by design (§7, §12–14).
 
 ---
 
