@@ -16,6 +16,7 @@ const TITLES: Record<GameType, string> = {
   snakes_and_ladders: 'Snakes & Ladders',
   judgement: 'Judgement',
   teen_patti: 'Teen Patti',
+  ludo: 'Ludo',
 };
 
 export function Lobby({

@@ -9,6 +9,7 @@ import { closeCall } from './games/closeCall.js';
 import { snakesAndLadders } from './games/snakesAndLadders.js';
 import { judgement } from './games/judgement.js';
 import { teenPatti } from './games/teenPatti.js';
+import { ludo } from './games/ludo.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const modules: Record<GameType, GameModule<any>> = {
@@ -21,6 +22,7 @@ const modules: Record<GameType, GameModule<any>> = {
   snakes_and_ladders: snakesAndLadders,
   judgement,
   teen_patti: teenPatti,
+  ludo,
 };
 
 export function getGameModule(type: GameType): GameModule {
