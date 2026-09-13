@@ -87,7 +87,7 @@ interface Room {
 }
 
 const DEFAULT_SETTINGS: RoomSettings = {
-  playlist: ['majority_report', 'bluff_bureau', 'caption_court', 'link_up', 'alibi_club', 'close_call'],
+  playlist: config.launchPlaylist as GameType[],
   familiarity: 'friends',
   vibe: 'clever',
   timerScale: 1,
@@ -576,6 +576,7 @@ export class RoomManager {
       settings: room.settings,
       scoringVersion: SCORING_VERSION,
       tier: room.tier,
+      billingEnabled: config.billingEnabled,
       hostMemberId: room.hostMemberId,
       members,
       playlist: room.playlist,

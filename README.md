@@ -91,6 +91,25 @@ curl -X POST http://localhost:4000/billing/dev-checkout \
 
 ---
 
+## Deploy it (go live)
+
+Room Riot also ships as **one container** that serves the web app and the game
+server together on a single URL — the fastest way to get real people playing.
+The default launch config is **payments off** with a **free 3‑game night**
+(Majority Report → Caption Court → Close Call).
+
+```bash
+# Build the single-service image and run it anywhere
+docker build -t room-riot .
+docker run -p 8080:8080 -e ROOM_RIOT_SECRET=$(openssl rand -hex 32) room-riot
+# → http://localhost:8080
+```
+
+One‑click‑ish hosts: this repo includes a **`render.yaml`** Blueprint (Render),
+and the same image runs on Railway, Fly.io, or any VPS. Full instructions —
+including how to turn payments back on for new games later — are in
+**[DEPLOY.md](./DEPLOY.md)**.
+
 ## The plan of execution, phase by phase
 
 The blueprint's roadmap (§15) sequences the work in eight phases. Here is the plan, with what this repository already delivers.

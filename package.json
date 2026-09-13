@@ -13,6 +13,8 @@
     "dev:server": "npm run dev --workspace @roomriot/game-server",
     "dev:web": "npm run dev --workspace @roomriot/web",
     "build": "npm run build --workspace @roomriot/web",
+    "build:static": "BUILD_STATIC=1 NEXT_PUBLIC_SERVER_URL= npm run build --workspace @roomriot/web",
+    "start:prod": "npm run start --workspace @roomriot/game-server",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -b --pretty"

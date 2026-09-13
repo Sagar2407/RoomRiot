@@ -37,7 +37,7 @@ export function Results({ projection, selfId }: { projection: RoomProjection; se
         </div>
       )}
 
-      {projection.tier !== 'party_pass' && (
+      {projection.billingEnabled && projection.tier !== 'party_pass' && (
         <div className="card stack center">
           <strong>Enjoyed the night?</strong>
           <p className="muted small" style={{ margin: 0 }}>

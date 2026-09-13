@@ -8,8 +8,10 @@ import {
   activePartyPass,
   resolvePlaylist,
   freeRotationGames,
+  entitlementStatus,
   type BillingEvent,
 } from '@roomriot/game-server/src/billing.ts';
+import { config } from '@roomriot/game-server/src/config.ts';
 
 let built: BuiltServer | null = null;
 afterEach(() => {
@@ -91,5 +93,40 @@ describe('free-tier gate (blueprint §14)', () => {
     const proj = rm.resync(host.memberId, host.roomId)!;
     expect(proj.tier).toBe('free');
     expect(proj.playlist).toHaveLength(3);
+  });
+});
+
+describe('billing-off launch mode (payments stripped)', () => {
+  it('serves the configured launch playlist to everyone, no paywall', async () => {
+    built = await buildServer(':memory:');
+    const { db, analytics } = built;
+    const trio = ['majority_report', 'caption_court', 'close_call'];
+    const prevEnabled = config.billingEnabled;
+    const prevPlaylist = config.launchPlaylist;
+    config.billingEnabled = false;
+    config.launchPlaylist = [...trio];
+    try {
+      // Even a "buyer" just gets the launch set — there's no gate to bypass.
+      processBillingEvent(db, analytics, payment('guest:x'));
+      const r = resolvePlaylist(db, 'guest:x', [
+        'majority_report',
+        'bluff_bureau',
+        'caption_court',
+        'link_up',
+        'alibi_club',
+        'close_call',
+      ]);
+      expect(r.tier).toBe('free');
+      expect(r.playlist).toEqual(trio);
+
+      const ent = entitlementStatus(db, 'guest:x');
+      expect(ent.billingEnabled).toBe(false);
+      expect(ent.tier).toBe('free');
+      expect(ent.partyPass).toBeNull();
+      expect(ent.freeGames).toEqual(trio);
+    } finally {
+      config.billingEnabled = prevEnabled;
+      config.launchPlaylist = prevPlaylist;
+    }
   });
 });

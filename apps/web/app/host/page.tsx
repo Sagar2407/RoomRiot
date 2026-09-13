@@ -34,6 +34,12 @@ export default function HostSetup() {
   }, []);
 
   const isPass = ent?.tier === 'party_pass';
+  const billingOff = ent?.billingEnabled === false;
+  const startLabel = billingOff
+    ? 'Start the night'
+    : isPass
+      ? 'Start the full night (6 games)'
+      : `Start a free night (${ent?.freeGames.length ?? 3} games)`;
 
   async function unlock() {
     setBusy(true);
@@ -75,7 +81,7 @@ export default function HostSetup() {
           <input value={nickname} maxLength={24} onChange={(e) => setNickname(e.target.value)} placeholder="e.g. Sagar" />
         </label>
         <button className="btn orange" disabled={busy || !nickname.trim()} onClick={start}>
-          {busy ? 'Starting…' : isPass ? 'Start the full night (6 games)' : 'Start a free night (3 games)'}
+          {busy ? 'Starting…' : startLabel}
         </button>
       </div>
 
@@ -83,7 +89,20 @@ export default function HostSetup() {
 
       {ent && (
         <div className="card stack">
-          {isPass ? (
+          {billingOff ? (
+            <>
+              <div className="pill grey">Tonight’s games</div>
+              <div className="stack" style={{ gap: 4 }}>
+                {ent.freeGames.map((g) => (
+                  <div key={g} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>{TITLES[g]}</span>
+                    <span className="pill grey">{GAME_FAMILY[g]}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="small muted" style={{ margin: 0 }}>Guests join free with the room code. More games coming soon.</p>
+            </>
+          ) : isPass ? (
             <>
               <div className="pill">Party Pass active</div>
               <p className="muted" style={{ margin: 0 }}>

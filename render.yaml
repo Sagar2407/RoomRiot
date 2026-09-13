@@ -1,0 +1,34 @@
+# Render Blueprint — deploy Room Riot as one web service.
+# In Render: New + → Blueprint → pick this repo/branch. Render reads this file,
+# builds the Dockerfile, and gives you a public https URL people can play on.
+#
+# WebSockets work on Render web services. The free plan spins down after ~15 min
+# idle (first visitor then waits for a ~cold start); a paid instance stays warm.
+
+services:
+  - type: web
+    name: room-riot
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      # Stable secret for signed guest/member tokens (Render generates one).
+      - key: ROOM_RIOT_SECRET
+        generateValue: true
+      # Launch with payments OFF and a free 3-game night.
+      - key: ROOM_RIOT_BILLING_ENABLED
+        value: "false"
+      - key: ROOM_RIOT_PLAYLIST
+        value: majority_report,caption_court,close_call
+      - key: NODE_ENV
+        value: production
+    # SQLite runs on ephemeral storage on the free plan (rooms are short-lived, so
+    # that's fine). To keep XP/analytics across redeploys, upgrade the plan, add a
+    # disk, and point the DB at it:
+    # disk:
+    #   name: data
+    #   mountPath: /var/data
+    #   sizeGB: 1
+    # ...and set ROOM_RIOT_DB=/var/data/room-riot.sqlite in envVars above.

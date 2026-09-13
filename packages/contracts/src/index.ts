@@ -55,9 +55,11 @@ export const PARTY_PASS = {
 export interface EntitlementStatus {
   tier: Tier;
   partyPass: { active: boolean; validUntil: number } | null;
-  /** The rotating free trio available right now. */
+  /** The rotating free trio available right now (or the launch set when billing is off). */
   freeGames: GameType[];
   offer: { product: string; priceUsd: number; durationHours: number; label: string; unlocks: string };
+  /** When false, the app is entirely free — clients hide the offer/paywall. */
+  billingEnabled: boolean;
 }
 
 /** Membership role. Host controls can be exercised from the same device used to play. */
@@ -210,6 +212,8 @@ export interface RoomProjection {
   scoringVersion: string;
   /** Whether this room is a free night or a Party Pass night (blueprint §14). */
   tier: Tier;
+  /** When false, monetization is turned off entirely (clients hide tier/upsell UI). */
+  billingEnabled: boolean;
   hostMemberId: string;
   members: MemberView[];
   playlist: GameType[];

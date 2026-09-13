@@ -121,16 +121,18 @@ export function tierFor(db: DB, guestId: string, now = Date.now()): Tier {
  * trio — a complete short night, never a mid-game paywall.
  */
 export function resolvePlaylist(db: DB, guestId: string, requested: GameType[], now = Date.now()): { playlist: GameType[]; tier: Tier } {
+  // Billing off ⇒ the whole app is free: everyone plays the launch playlist.
+  if (!config.billingEnabled) return { playlist: config.launchPlaylist as GameType[], tier: 'free' };
   if (activePartyPass(db, guestId, now)) return { playlist: requested, tier: 'party_pass' };
   return { playlist: freeRotationGames(now), tier: 'free' };
 }
 
 export function entitlementStatus(db: DB, guestId: string, now = Date.now()): EntitlementStatus {
-  const pass = activePartyPass(db, guestId, now);
+  const pass = config.billingEnabled ? activePartyPass(db, guestId, now) : null;
   return {
     tier: pass ? 'party_pass' : 'free',
     partyPass: pass,
-    freeGames: freeRotationGames(now),
+    freeGames: config.billingEnabled ? freeRotationGames(now) : (config.launchPlaylist as GameType[]),
     offer: {
       product: PARTY_PASS.product,
       priceUsd: config.partyPassPriceUsd,
@@ -138,5 +140,6 @@ export function entitlementStatus(db: DB, guestId: string, now = Date.now()): En
       label: PARTY_PASS.label,
       unlocks: PARTY_PASS.unlocks,
     },
+    billingEnabled: config.billingEnabled,
   };
 }

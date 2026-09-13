@@ -4,6 +4,18 @@ import { dirname, resolve } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+const ALL_GAMES = ['majority_report', 'bluff_bureau', 'caption_court', 'link_up', 'alibi_club', 'close_call'] as const;
+
+/** Parse ROOM_RIOT_PLAYLIST ("a,b,c") into a validated game-type list. */
+function parsePlaylist(raw: string | undefined): string[] {
+  if (!raw) return [...ALL_GAMES];
+  const wanted = raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => (ALL_GAMES as readonly string[]).includes(s));
+  return wanted.length > 0 ? wanted : [...ALL_GAMES];
+}
+
 export const config = {
   port: Number(process.env.PORT ?? 4000),
   host: process.env.HOST ?? '0.0.0.0',
@@ -32,4 +44,20 @@ export const config = {
   /** Party Pass: $4.99 for 24 hours from activation. */
   partyPassPriceUsd: Number(process.env.PARTY_PASS_PRICE ?? 4.99),
   partyPassHours: Number(process.env.PARTY_PASS_HOURS ?? 24),
+
+  // ---- Launch configuration ------------------------------------------------
+  /**
+   * When false, the whole app is free: no paywall, no offer, everyone plays the
+   * launch playlist. Flip to true (and set BILLING_WEBHOOK_SECRET + wire Stripe)
+   * to gate extra games behind the Party Pass later.
+   */
+  billingEnabled: (process.env.ROOM_RIOT_BILLING_ENABLED ?? 'true') === 'true',
+  /** The set of games a night runs (also the free launch set). */
+  launchPlaylist: parsePlaylist(process.env.ROOM_RIOT_PLAYLIST),
+
+  /**
+   * If set (and the directory exists), the game server also serves the built web
+   * app from here, so a single service hosts everything on one origin.
+   */
+  serveWebDir: process.env.SERVE_WEB_DIR ?? '',
 };

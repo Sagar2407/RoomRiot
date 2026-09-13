@@ -4,7 +4,10 @@
  */
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
+import fastifyStatic from '@fastify/static';
 import { Server as IOServer } from 'socket.io';
+import { existsSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { config } from './config.js';
 import { openDb, type DB } from './db.js';
 import { RoomManager } from './roomManager.js';
@@ -47,6 +50,26 @@ export async function buildServer(dbPath?: string): Promise<BuiltServer> {
   const rm = new RoomManager(db, io, analytics);
   registerRoutes(app, rm, analytics, db);
   registerSocket(io, rm);
+
+  // Single-service mode: also serve the built web app from one origin, so the
+  // whole game deploys as one container behind one URL.
+  const webDir = config.serveWebDir ? resolve(config.serveWebDir) : '';
+  if (webDir && existsSync(webDir)) {
+    await app.register(fastifyStatic, { root: webDir, prefix: '/', wildcard: false });
+    // Serve the exported HTML for client routes that aren't a file on disk.
+    app.setNotFoundHandler((req, reply) => {
+      const urlPath = (req.raw.url ?? '/').split('?')[0] ?? '/';
+      if (req.method !== 'GET' || urlPath.includes('..')) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
+      const candidates = [join(webDir, urlPath, 'index.html'), join(webDir, `${urlPath}.html`), join(webDir, 'index.html')];
+      for (const file of candidates) {
+        if (existsSync(file)) return reply.type('text/html').send(readFileSync(file));
+      }
+      return reply.code(404).send({ error: 'not_found' });
+    });
+    app.log.info(`Serving web app from ${webDir}`);
+  }
 
   return { app, io, db, rm, analytics };
 }
