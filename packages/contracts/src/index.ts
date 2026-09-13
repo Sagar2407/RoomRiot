@@ -32,6 +32,7 @@ export const GAME_TYPES = [
   // Indian Classics (added as each module is built; disabled until ready).
   'snakes_and_ladders',
   'judgement',
+  'teen_patti',
 ] as const;
 export type GameType = (typeof GAME_TYPES)[number];
 
@@ -54,6 +55,7 @@ export const GAME_FAMILY: Record<GameType, string> = {
   close_call: 'Predictions',
   snakes_and_ladders: 'Board',
   judgement: 'Cards',
+  teen_patti: 'Cards',
 };
 
 /** Room lifecycle. */

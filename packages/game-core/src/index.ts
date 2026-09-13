@@ -20,5 +20,8 @@ export * from './boards/snakesBoards.js';
 export { snakesAndLadders, createSnakesState } from './games/snakesAndLadders.js';
 export type { SnakesState } from './games/snakesAndLadders.js';
 export * from './cards/cards.js';
+export * from './cards/teenPattiRank.js';
 export { judgement } from './games/judgement.js';
 export type { JudgementState } from './games/judgement.js';
+export { teenPatti } from './games/teenPatti.js';
+export type { TeenPattiState } from './games/teenPatti.js';

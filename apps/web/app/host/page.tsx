@@ -16,6 +16,7 @@ const TITLES: Record<GameType, string> = {
   close_call: 'Close Call',
   snakes_and_ladders: 'Snakes & Ladders',
   judgement: 'Judgement',
+  teen_patti: 'Teen Patti',
 };
 
 export default function HostSetup() {
