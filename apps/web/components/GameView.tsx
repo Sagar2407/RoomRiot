@@ -34,9 +34,16 @@ export function GameView({ projection, send, board }: { projection: RoomProjecti
     if (!res.accepted) setError(res.message ?? res.reason ?? 'Not accepted');
   }
 
-  const gid = (projection.game as unknown as { id?: string })?.id;
+  // Every game move names the exact game + phase it targets, so a tap that lands
+  // after the timer closes is rejected by the server rather than counted for the
+  // next round (blueprint §8, §10).
   async function actGame(type: string, payload: unknown) {
-    const res = await send({ type, phaseId: (game as unknown as { phaseId?: string }).phaseId, gameId: gid, payload });
+    const res = await send({
+      type,
+      gameId: projection.gameId ?? undefined,
+      phaseId: projection.phaseId ?? undefined,
+      payload,
+    });
     if (!res.accepted) setError(res.message ?? res.reason ?? 'Not accepted');
   }
 

@@ -31,6 +31,21 @@ export const config = {
   webOrigin: process.env.WEB_ORIGIN ?? 'http://localhost:3000',
   /** Blueprint §10: expire abandoned rooms after a two-hour inactivity window. */
   roomTtlMs: Number(process.env.ROOM_TTL_MS ?? 2 * 60 * 60 * 1000),
+  /**
+   * Global safety ceiling on a room's roster. The effective capacity is the
+   * smaller of this and the largest maxPlayers across the room's playlist, so a
+   * room can never grow past what its games support (blueprint §5).
+   */
+  roomMaxPlayers: Number(process.env.ROOM_MAX_PLAYERS ?? 12),
+
+  /** True in production; used to lock ops endpoints by default. */
+  isProduction: process.env.NODE_ENV === 'production',
+  /**
+   * Bearer token guarding GET /metrics. When set, callers must present it
+   * (Authorization: Bearer <token> or ?token=). In production an unset token
+   * locks the endpoint entirely; in dev it stays open for convenience.
+   */
+  metricsToken: process.env.ROOM_RIOT_METRICS_TOKEN ?? '',
 
   // ---- Billing (blueprint §14). Stripe drops in behind these seams. --------
   /** Secret used to verify signed billing webhook events (Stripe: webhook signing secret). */

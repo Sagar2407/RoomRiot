@@ -17,6 +17,9 @@ services:
       # Stable secret for signed guest/member tokens (Render generates one).
       - key: ROOM_RIOT_SECRET
         generateValue: true
+      # Bearer token guarding GET /metrics (read it from the Render dashboard).
+      - key: ROOM_RIOT_METRICS_TOKEN
+        generateValue: true
       # Launch with payments OFF and a free 3-game night.
       - key: ROOM_RIOT_BILLING_ENABLED
         value: "false"

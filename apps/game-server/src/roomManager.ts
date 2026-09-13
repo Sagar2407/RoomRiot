@@ -84,6 +84,8 @@ interface Room {
   seq: number;
   timer: NodeJS.Timeout | null;
   expiresAt: number;
+  /** Set once the night has completed, so settlement/emit happens exactly once. */
+  nightCompleted: boolean;
 }
 
 const DEFAULT_SETTINGS: RoomSettings = {
@@ -99,6 +101,8 @@ export class RoomManager {
   private rooms = new Map<string, Room>();
   private socketsByMember = new Map<string, Socket>();
   private displaySockets = new Map<string, Set<Socket>>();
+  /** Recent report timestamps per member, for socket-side report rate limiting. */
+  private reportTimes = new Map<string, number[]>();
 
   constructor(
     private db: DB,
@@ -148,6 +152,7 @@ export class RoomManager {
       seq: 0,
       timer: null,
       expiresAt: now + config.roomTtlMs,
+      nightCompleted: false,
     };
     this.db
       .prepare(
@@ -172,6 +177,10 @@ export class RoomManager {
     const existing = [...room.members.values()].find((m) => m.guestId === guestId && m.active);
     if (existing) return this.credentials(room, existing, guestId);
 
+    // A new seat must fit inside the room's capacity (blueprint §5). Reconnecting
+    // members are exempt (handled above) so a full room never locks anyone out.
+    if (this.activeCount(room) >= this.roomCapacity(room)) return { error: 'room_full' as const };
+
     if (room.status !== 'lobby' && room.status !== 'intermission') {
       // Roster locks during a game; late arrivals still get a seat and watch,
       // then play from the next game (blueprint §5).
@@ -190,7 +199,9 @@ export class RoomManager {
   addBots(roomId: string, count: number): void {
     const room = this.rooms.get(roomId);
     if (!room) return;
+    const capacity = this.roomCapacity(room);
     for (let i = 0; i < count; i++) {
+      if (this.activeCount(room) >= capacity) break; // never grow past capacity
       this.insertMember(room, `bot:${randomUUID()}`, botName(room.members.size), 'player');
     }
     this.broadcast(room);
@@ -309,11 +320,15 @@ export class RoomManager {
       return this.reportContent(room, action, memberId);
     }
 
-    // Game moves.
+    // Game moves must name the exact game + phase they target, so a tap that
+    // lands after the timer closes or the phase advances is rejected — never
+    // silently applied to the next round (blueprint §8, §10).
     const g = room.game;
     if (!g || room.status !== 'in_game') return this.recordAndReject(room, action, memberId, 'wrong_phase', 'No active game');
-    if (action.phaseId && action.phaseId !== g.state.phase.id)
-      return this.recordAndReject(room, action, memberId, 'wrong_phase', 'Stale phase');
+    if (!action.phaseId || action.phaseId !== g.state.phase.id)
+      return this.recordAndReject(room, action, memberId, 'wrong_phase', 'This round has already moved on');
+    if (action.gameId && action.gameId !== g.id)
+      return this.recordAndReject(room, action, memberId, 'wrong_phase', 'This game has already moved on');
     if (!g.roster.includes(memberId))
       return this.recordAndReject(room, action, memberId, 'not_permitted', 'Not seated in this game');
     if (g.deadlineAt && Date.now() > g.deadlineAt)
@@ -342,16 +357,22 @@ export class RoomManager {
   private hostAction(room: Room, action: ClientAction, memberId: string): ActionResult {
     if (action.type === 'start_night') {
       if (room.status === 'lobby') {
-        room.playlistIndex = 0;
+        const idx = this.nextPlayableIndex(room, 0);
+        if (idx < 0) {
+          const need = Math.min(...room.playlist.map((t) => getGameModule(t).manifest.minPlayers));
+          return this.recordAndReject(room, action, memberId, 'not_permitted', `Need at least ${need} players to start — add more players or a fictional player.`);
+        }
+        room.playlistIndex = idx;
         this.startGame(room);
       }
     } else if (action.type === 'next') {
       if (room.status === 'intermission') {
-        if (room.playlistIndex + 1 < room.playlist.length) {
-          room.playlistIndex += 1;
-          this.startGame(room);
-        } else {
+        const idx = this.nextPlayableIndex(room, room.playlistIndex + 1);
+        if (idx < 0) {
           this.completeNight(room);
+        } else {
+          room.playlistIndex = idx;
+          this.startGame(room);
         }
       }
     } else if (action.type === 'end_night') {
@@ -389,10 +410,10 @@ export class RoomManager {
     room.status = 'in_game';
     this.db
       .prepare(
-        `INSERT INTO game_instances (id, room_id, playlist_index, game_type, rules_version, seed, state_json, phase_id, deadline_at, status, settled, created_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,0,?)`,
+        `INSERT INTO game_instances (id, room_id, playlist_index, game_type, rules_version, seed, state_json, phase_id, roster_json, deadline_at, status, settled, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,0,?)`,
       )
-      .run(g.id, room.id, room.playlistIndex, gameType, SCORING_VERSION, seed, JSON.stringify(state), state.phase.id, null, 'active', Date.now());
+      .run(g.id, room.id, room.playlistIndex, gameType, SCORING_VERSION, seed, JSON.stringify(state), state.phase.id, JSON.stringify(g.roster), null, 'active', Date.now());
     this.db.prepare(`UPDATE rooms SET status = ?, playlist_index = ? WHERE id = ?`).run(room.status, room.playlistIndex, room.id);
     this.analytics.emit('game_started', {
       roomId: room.id,
@@ -502,6 +523,10 @@ export class RoomManager {
   }
 
   private completeNight(room: Room): void {
+    // Exactly once: a second end_night (or one racing the auto-complete of the
+    // final game) must not re-emit session_completed or rebuild awards (§10, §16).
+    if (room.nightCompleted) return;
+    room.nightCompleted = true;
     room.status = 'complete';
     room.game = null;
     this.reloadScores(room);
@@ -524,6 +549,11 @@ export class RoomManager {
   }
 
   private reportContent(room: Room, action: ClientAction, memberId: string): ActionResult {
+    // Socket actions bypass the HTTP rate limiter, so guard reports here: a
+    // member may file a handful in a short window, no more (blueprint §12).
+    if (!this.allowReport(memberId)) {
+      return this.recordAndReject(room, action, memberId, 'rate_limited', 'Too many reports — please wait a moment.');
+    }
     const p = (action.payload ?? {}) as { reason?: unknown; note?: unknown };
     const reason = typeof p.reason === 'string' && p.reason.trim() ? p.reason.trim().slice(0, 64) : 'unspecified';
     const g = room.game;
@@ -582,6 +612,8 @@ export class RoomManager {
       playlist: room.playlist,
       playlistIndex: room.playlistIndex,
       deadlineAt: g?.deadlineAt ?? null,
+      gameId: g?.id ?? null,
+      phaseId: g?.state.phase.id ?? null,
       game: g && mod ? mod.projectPublic(g.state) : null,
       scoreboard,
       awards: room.status === 'complete' ? room.awards : undefined,
@@ -621,6 +653,52 @@ export class RoomManager {
       const m = room.members.get(id);
       return !!m && m.active && (m.connected || isBot(m.guestId));
     });
+  }
+
+  /** Sliding-window guard: at most 5 reports per member per 5 minutes. */
+  private allowReport(memberId: string): boolean {
+    const WINDOW_MS = 5 * 60 * 1000;
+    const MAX = 5;
+    const now = Date.now();
+    const times = (this.reportTimes.get(memberId) ?? []).filter((t) => now - t < WINDOW_MS);
+    if (times.length >= MAX) {
+      this.reportTimes.set(memberId, times);
+      return false;
+    }
+    times.push(now);
+    this.reportTimes.set(memberId, times);
+    return true;
+  }
+
+  /** Active members currently in the room (the seating that will lock at start). */
+  private activeCount(room: Room): number {
+    let n = 0;
+    for (const m of room.members.values()) if (m.active) n++;
+    return n;
+  }
+
+  /**
+   * Effective seat cap: the smaller of the global ceiling and the largest table
+   * any game in the playlist supports, so the room never grows past what its
+   * games can seat (blueprint §5).
+   */
+  private roomCapacity(room: Room): number {
+    const playlistMax = Math.max(...room.playlist.map((t) => getGameModule(t).manifest.maxPlayers));
+    return Math.min(config.roomMaxPlayers, playlistMax);
+  }
+
+  /**
+   * The first playlist index at or after `from` whose game can actually run with
+   * the current roster (respecting each game's minPlayers), or -1 if none can.
+   * Games needing more players than are present are skipped rather than started
+   * into a broken round (blueprint §5).
+   */
+  private nextPlayableIndex(room: Room, from: number): number {
+    const present = this.activeCount(room);
+    for (let i = Math.max(0, from); i < room.playlist.length; i++) {
+      if (present >= getGameModule(room.playlist[i]!).manifest.minPlayers) return i;
+    }
+    return -1;
   }
 
   private runBots(room: Room): void {
@@ -721,6 +799,7 @@ export class RoomManager {
         seq: 0,
         timer: null,
         expiresAt: r.expires_at as number,
+        nightCompleted: (r.status as string) === 'complete',
       };
       const members = this.db.prepare(`SELECT * FROM members WHERE room_id = ? ORDER BY seat`).all(room.id) as Array<Record<string, unknown>>;
       for (const m of members) {
@@ -743,7 +822,12 @@ export class RoomManager {
           id: gi.id as string,
           gameType: gi.game_type as GameType,
           seed: gi.seed as string,
-          roster: [...room.members.values()].filter((m) => m.active).map((m) => m.id),
+          // The roster locked at game start, restored verbatim — not recomputed
+          // from whoever happens to be active now (blueprint §10). Older rows
+          // without a stored roster fall back to the active members.
+          roster: gi.roster_json
+            ? (JSON.parse(gi.roster_json as string) as string[])
+            : [...room.members.values()].filter((m) => m.active).map((m) => m.id),
           state,
           deadlineAt: (gi.deadline_at as number | null) ?? null,
           settled: false,

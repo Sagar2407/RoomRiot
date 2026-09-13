@@ -50,18 +50,54 @@ export function useRoom(auth: Auth | null): UseRoom {
   }, [JSON.stringify(auth)]);
 
   const send = useCallback((input: Omit<ClientAction, 'actionId'>): Promise<ActionResult> => {
+    // The actionId is minted once and reused on every retry. The server is
+    // idempotent by actionId (blueprint §10), so a retry after a lost ack returns
+    // the recorded outcome instead of applying the action twice.
+    const actionId =
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random()}`;
+    const action: ClientAction = { ...input, actionId };
+    const MAX_ATTEMPTS = 3;
+    const ACK_TIMEOUT_MS = 6000;
+
     return new Promise((resolve) => {
-      const socket = socketRef.current;
-      const actionId =
-        typeof crypto !== 'undefined' && 'randomUUID' in crypto
-          ? crypto.randomUUID()
-          : `${Date.now()}-${Math.random()}`;
-      const action: ClientAction = { ...input, actionId };
-      if (!socket) {
-        resolve({ actionId, accepted: false, reason: 'internal_error', sequence: 0 });
-        return;
-      }
-      socket.emit('game.action', action, (result: ActionResult) => resolve(result));
+      let settled = false;
+      let attempts = 0;
+      const finish = (r: ActionResult) => {
+        if (!settled) {
+          settled = true;
+          resolve(r);
+        }
+      };
+      const attempt = () => {
+        attempts += 1;
+        const socket = socketRef.current;
+        if (!socket || !socket.connected) {
+          // No live socket yet — wait briefly for (re)connect, then give up so the
+          // caller never hangs forever on a dead connection.
+          if (attempts >= MAX_ATTEMPTS) {
+            finish({ actionId, accepted: false, reason: 'internal_error', message: 'Not connected — check your connection and try again.', sequence: 0 });
+            return;
+          }
+          setTimeout(attempt, 1000);
+          return;
+        }
+        let acked = false;
+        socket.emit('game.action', action, (result: ActionResult) => {
+          acked = true;
+          finish(result);
+        });
+        setTimeout(() => {
+          if (settled || acked) return;
+          if (attempts >= MAX_ATTEMPTS) {
+            finish({ actionId, accepted: false, reason: 'internal_error', message: 'No response from the server — please try again.', sequence: 0 });
+            return;
+          }
+          attempt(); // retry with the same actionId
+        }, ACK_TIMEOUT_MS);
+      };
+      attempt();
     });
   }, []);
 

@@ -111,7 +111,8 @@ export function Lobby({
         <div className="notice">Waiting for the host to start the night…</div>
       )}
 
-      <p className="small muted center">Server: {SERVER_URL}</p>
+      {/* Only meaningful in dev cross-origin mode; blank in single-origin deploys. */}
+      {SERVER_URL && <p className="small muted center">Server: {SERVER_URL}</p>}
     </div>
   );
 }

@@ -134,6 +134,7 @@ export type ActionRejectionCode =
   | 'version_conflict'
   | 'duplicate'
   | 'not_permitted'
+  | 'rate_limited'
   | 'internal_error';
 
 /** `action.result` — server's acknowledgement of a command. */
@@ -221,6 +222,13 @@ export interface RoomProjection {
   playlistIndex: number;
   /** Absolute server ms deadline for the current phase, if any. */
   deadlineAt: number | null;
+  /**
+   * Identifiers the client must echo back on every game move so the server can
+   * reject a stale submit (a tap that lands after the phase/game has moved on).
+   * Null when no game is running. (blueprint §8, §10)
+   */
+  gameId: string | null;
+  phaseId: string | null;
   /** Present while a game is running. */
   game: GamePublicView | null;
   /** Only present in a per-member projection (never on the display token). */
