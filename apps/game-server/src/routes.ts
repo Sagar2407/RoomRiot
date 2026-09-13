@@ -15,7 +15,7 @@ import {
   verifySignature,
   type BillingEvent,
 } from './billing.js';
-import { verifyToken, type GuestClaims, type MemberClaims, type DisplayClaims } from './tokens.js';
+import { issueToken, verifyToken, type GuestClaims, type MemberClaims, type DisplayClaims } from './tokens.js';
 
 function guestIdFrom(token: string | undefined): string {
   const claims = verifyToken<GuestClaims>(token);
@@ -27,6 +27,10 @@ export function registerRoutes(app: FastifyInstance, rm: RoomManager, analytics:
 
   // Operations funnel (blueprint §16). Aggregates only — no per-user data.
   app.get('/metrics', async () => analytics.funnel());
+
+  // Mint a stable guest identity up front, so a pre-room purchase attaches to the
+  // same identity that later hosts the room (blueprint §14).
+  app.post('/guest', async () => ({ guestToken: issueToken({ typ: 'guest', guestId: `guest:${randomUUID()}` }) }));
 
   // ---- Billing & entitlements (blueprint §14) ----------------------------
 

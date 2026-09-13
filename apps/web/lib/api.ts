@@ -1,7 +1,22 @@
 'use client';
 import type { MembershipCredentials, RoomSettings, EntitlementStatus } from '@roomriot/contracts';
 import { SERVER_URL } from './config';
-import { loadGuestToken } from './storage';
+import { loadGuestToken, saveGuestToken } from './storage';
+
+/**
+ * Ensure a stable guest identity exists before any pre-room action (viewing the
+ * offer, dev-checkout, hosting) so an entitlement attaches to the same identity
+ * that later creates the room.
+ */
+export async function ensureGuestToken(): Promise<string> {
+  const existing = loadGuestToken();
+  if (existing) return existing;
+  const res = await fetch(`${SERVER_URL}/guest`, { method: 'POST' });
+  if (!res.ok) throw new Error('Could not start a guest session');
+  const { guestToken } = (await res.json()) as { guestToken: string };
+  saveGuestToken(guestToken);
+  return guestToken;
+}
 
 async function post<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${SERVER_URL}${path}`, {

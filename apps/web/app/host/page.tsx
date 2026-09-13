@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { EntitlementStatus, GameType } from '@roomriot/contracts';
 import { GAME_FAMILY } from '@roomriot/contracts';
-import { hostRoom, getEntitlements, devCheckout } from '../../lib/api';
+import { hostRoom, getEntitlements, devCheckout, ensureGuestToken } from '../../lib/api';
 import { saveCreds } from '../../lib/storage';
 
 const TITLES: Record<GameType, string> = {
@@ -23,9 +23,14 @@ export default function HostSetup() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    getEntitlements()
-      .then(setEnt)
-      .catch((e) => setError(e instanceof Error ? e.message : 'Could not load offer'));
+    (async () => {
+      try {
+        await ensureGuestToken(); // stable identity before viewing the offer / buying
+        setEnt(await getEntitlements());
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Could not load offer');
+      }
+    })();
   }, []);
 
   const isPass = ent?.tier === 'party_pass';
