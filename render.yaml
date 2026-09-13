@@ -21,7 +21,7 @@ services:
       - key: ROOM_RIOT_BILLING_ENABLED
         value: "false"
       - key: ROOM_RIOT_PLAYLIST
-        value: majority_report,caption_court,close_call
+        value: majority_report,link_up,bluff_bureau,caption_court,close_call
       - key: NODE_ENV
         value: production
     # SQLite runs on ephemeral storage on the free plan (rooms are short-lived, so

@@ -50,6 +50,26 @@ describe('reporting & moderation (blueprint §12, §16)', () => {
     expect(funnel.rates_pct.join_success).toBe(100);
   });
 
+  it('rate-limits room creation per IP (blueprint §9)', async () => {
+    built = await buildServer(':memory:');
+    const { app } = built;
+    await app.ready();
+    let got429 = false;
+    for (let i = 0; i < 25; i++) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/rooms',
+        headers: { 'content-type': 'application/json' },
+        payload: { nickname: `H${i}` },
+      });
+      if (res.statusCode === 429) {
+        got429 = true;
+        break;
+      }
+    }
+    expect(got429).toBe(true);
+  });
+
   it('never stores prompt answers or nicknames in analytics rows', async () => {
     built = await buildServer(':memory:');
     const { rm, db } = built;

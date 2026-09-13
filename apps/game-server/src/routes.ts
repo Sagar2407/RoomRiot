@@ -22,6 +22,15 @@ function guestIdFrom(token: string | undefined): string {
   return claims?.typ === 'guest' && claims.guestId ? claims.guestId : `guest:${randomUUID()}`;
 }
 
+// Per-route limits. Joins are generous so a whole party on one Wi-Fi is never
+// throttled, while still slowing room-code brute forcing (blueprint §9).
+const LIMIT = {
+  create: { config: { rateLimit: { max: 20, timeWindow: '5 minutes' } } },
+  join: { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+  guest: { config: { rateLimit: { max: 60, timeWindow: '5 minutes' } } },
+  support: { config: { rateLimit: { max: 5, timeWindow: '5 minutes' } } },
+};
+
 export function registerRoutes(app: FastifyInstance, rm: RoomManager, analytics: Analytics, db: DB): void {
   app.get('/health', async () => ({ ok: true, service: 'room-riot-game-server' }));
 
@@ -30,7 +39,7 @@ export function registerRoutes(app: FastifyInstance, rm: RoomManager, analytics:
 
   // Mint a stable guest identity up front, so a pre-room purchase attaches to the
   // same identity that later hosts the room (blueprint §14).
-  app.post('/guest', async () => ({ guestToken: issueToken({ typ: 'guest', guestId: `guest:${randomUUID()}` }) }));
+  app.post('/guest', LIMIT.guest, async () => ({ guestToken: issueToken({ typ: 'guest', guestId: `guest:${randomUUID()}` }) }));
 
   // ---- Billing & entitlements (blueprint §14) ----------------------------
 
@@ -67,7 +76,7 @@ export function registerRoutes(app: FastifyInstance, rm: RoomManager, analytics:
   });
 
   // Support flow (blueprint §15).
-  app.post('/support', async (req, reply) => {
+  app.post('/support', LIMIT.support, async (req, reply) => {
     const body = (req.body ?? {}) as { email?: string; message?: string; roomId?: string };
     if (!body.message || body.message.trim().length === 0) return reply.code(400).send({ error: 'message_required' });
     db.prepare(
@@ -76,7 +85,7 @@ export function registerRoutes(app: FastifyInstance, rm: RoomManager, analytics:
     return reply.send({ ok: true });
   });
 
-  app.post('/rooms', async (req, reply) => {
+  app.post('/rooms', LIMIT.create, async (req, reply) => {
     const parsed = CreateRoomRequestSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_request', detail: parsed.error.flatten() });
     const guestId = guestIdFrom(parsed.data.guestToken);
@@ -84,7 +93,7 @@ export function registerRoutes(app: FastifyInstance, rm: RoomManager, analytics:
     return reply.code(201).send(credentials);
   });
 
-  app.post('/rooms/join', async (req, reply) => {
+  app.post('/rooms/join', LIMIT.join, async (req, reply) => {
     const parsed = JoinRoomRequestSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_request', detail: parsed.error.flatten() });
     const guestId = guestIdFrom(parsed.data.guestToken);
@@ -95,7 +104,7 @@ export function registerRoutes(app: FastifyInstance, rm: RoomManager, analytics:
   });
 
   // A solo host with a full table of fictional players (blueprint §3).
-  app.post('/practice', async (req, reply) => {
+  app.post('/practice', LIMIT.create, async (req, reply) => {
     const body = (req.body ?? {}) as { nickname?: string; guestToken?: string };
     const guestId = guestIdFrom(body.guestToken);
     const { credentials } = rm.createRoom(body.nickname?.trim() || 'You', { playlist: ['majority_report'] }, guestId);

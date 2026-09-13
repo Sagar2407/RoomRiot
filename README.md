@@ -95,8 +95,9 @@ curl -X POST http://localhost:4000/billing/dev-checkout \
 
 Room Riot also ships as **one container** that serves the web app and the game
 server together on a single URL — the fastest way to get real people playing.
-The default launch config is **payments off** with a **free 3‑game night**
-(Majority Report → Caption Court → Close Call).
+The default launch config is **payments off** with a **free 5‑game night**
+(Majority Report → Link Up → Bluff Bureau → Caption Court → Close Call), plus an
+**adults‑only (21+) gate** and **per‑IP rate limiting** on room create/join.
 
 ```bash
 # Build the single-service image and run it anywhere
