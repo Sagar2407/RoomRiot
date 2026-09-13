@@ -14,6 +14,7 @@ const TITLES: Record<GameType, string> = {
   alibi_club: 'Alibi Club',
   close_call: 'Close Call',
   snakes_and_ladders: 'Snakes & Ladders',
+  judgement: 'Judgement',
 };
 
 export function Lobby({
