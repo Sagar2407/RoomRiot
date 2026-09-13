@@ -82,7 +82,7 @@ the platform's built‑in HTTPS.
 | `ROOM_RIOT_SECRET` | random per boot | HMAC secret for guest/member tokens. **Set a stable value in prod** so tokens survive restarts. |
 | `ROOM_RIOT_METRICS_TOKEN` | _unset_ | Bearer token for `GET /metrics`. **In production, `/metrics` is locked until you set this** (the Render Blueprint generates one). Read it via `Authorization: Bearer <token>` or `?token=`. |
 | `ROOM_MAX_PLAYERS` | `12` | Global seat ceiling per room (the effective cap is the smaller of this and the largest game's max, currently 10). |
-| `ROOM_RIOT_ENABLE_CLASSICS` | `false` | `true` turns on the Indian Classics games (currently **Snakes & Ladders**) — they appear as "Beta" on the host page. Off by default, so the games ship dark until you flip this in a preview to playtest. |
+| `ROOM_RIOT_ENABLE_CLASSICS` | `false` | `true` turns on the Indian Classics games (**Snakes & Ladders**, **Judgement**, **Teen Patti**, **Ludo**) — they appear as "Beta" on the host page, each a standalone table with a "Rematch" at the end. Off by default, so the games ship dark until you flip this in a preview to playtest. |
 | `ROOM_RIOT_ENABLED_GAMES` | _(all party games)_ | Explicit comma-separated allowlist of games the host may start. Overrides the default; use it to enable a specific classic without turning on all of them. |
 | `ROOM_RIOT_BILLING_ENABLED` | `false` (in Docker) | `false` = whole app is free, no paywall. `true` = Party Pass gate. |
 | `ROOM_RIOT_PLAYLIST` | `majority_report,link_up,bluff_bureau,caption_court,close_call` | The games a night runs. Comma‑separated from: `majority_report, bluff_bureau, caption_court, link_up, alibi_club, close_call` (Alibi Club needs 5+ players). |
