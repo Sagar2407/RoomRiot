@@ -5,6 +5,7 @@
  * — they are not a client and never receive secrets over the wire.
  */
 import type { GamePublicView, GamePrivateView, GameType } from '@roomriot/contracts';
+import { rankValue } from '@roomriot/game-core';
 
 export interface BotMove {
   type: string;
@@ -89,6 +90,23 @@ export function botMoves(gameType: GameType, pub: GamePublicView, priv: GamePriv
       // runBots only reaches the active seat (awaitingInput); it simply rolls.
       if (pub.phaseKind !== 'rolling') return [];
       return [{ type: 'roll', payload: {} }];
+    }
+    case 'judgement': {
+      const secret = priv.secret as { hand?: string[]; legalBids?: number[]; legalCards?: string[] } | undefined;
+      const trump = (pub.prompt as { trump?: string } | undefined)?.trump;
+      if (pub.phaseKind === 'bidding' && secret?.legalBids?.length) {
+        // Estimate tricks from aces + trumps, then snap to the nearest legal bid.
+        const hand = secret.hand ?? [];
+        const est = hand.filter((c) => c[0] === 'A' || c[1] === trump).length;
+        const bid = secret.legalBids.reduce((best, v) => (Math.abs(v - est) < Math.abs(best - est) ? v : best), secret.legalBids[0]!);
+        return [{ type: 'bid', payload: { bid } }];
+      }
+      if (pub.phaseKind === 'playing' && secret?.legalCards?.length) {
+        // Transparent heuristic: shed the lowest legal card.
+        const card = [...secret.legalCards].sort((a, b) => rankValue(a) - rankValue(b))[0]!;
+        return [{ type: 'play_card', payload: { card } }];
+      }
+      return [];
     }
     default:
       return [];

@@ -19,3 +19,6 @@ export { bandScore } from './games/closeCall.js';
 export * from './boards/snakesBoards.js';
 export { snakesAndLadders, createSnakesState } from './games/snakesAndLadders.js';
 export type { SnakesState } from './games/snakesAndLadders.js';
+export * from './cards/cards.js';
+export { judgement } from './games/judgement.js';
+export type { JudgementState } from './games/judgement.js';

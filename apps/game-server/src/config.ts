@@ -7,7 +7,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 /** The original six party games. */
 const PARTY_GAMES = ['majority_report', 'bluff_bureau', 'caption_court', 'link_up', 'alibi_club', 'close_call'] as const;
 /** Indian Classics that have a registered module. Disabled by default (see ADR 0001). */
-const CLASSICS_GAMES = ['snakes_and_ladders'] as const;
+const CLASSICS_GAMES = ['snakes_and_ladders', 'judgement'] as const;
 /** Every known game type (party + classics with a module). */
 const ALL_GAMES = [...PARTY_GAMES, ...CLASSICS_GAMES] as const;
 

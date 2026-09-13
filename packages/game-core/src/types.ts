@@ -73,6 +73,12 @@ export interface InitContext {
   rng: RNG;
   /** Content already filtered to this game type and selected by the server. */
   content: ContentItem[];
+  /**
+   * Server-authoritative cryptographic shuffle for card games (plan §4.5). The
+   * dealt order is baked into the persisted state and never sent to the client.
+   * Tests inject a deterministic shuffle.
+   */
+  shuffle?: <T>(arr: readonly T[]) => T[];
 }
 
 /** A validated player command handed to the module. */
@@ -101,6 +107,8 @@ export interface ReduceContext {
    * rerolls (see docs/adr/0001-indian-classics.md, plan §4.5).
    */
   rollDie?: () => number;
+  /** Server-authoritative cryptographic shuffle for card games (deal / redeal). */
+  shuffle?: <T>(arr: readonly T[]) => T[];
 }
 
 /** One seat's finishing position in a placement (ranking) game. Ties share a rank. */

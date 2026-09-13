@@ -31,6 +31,7 @@ export const GAME_TYPES = [
   'close_call',
   // Indian Classics (added as each module is built; disabled until ready).
   'snakes_and_ladders',
+  'judgement',
 ] as const;
 export type GameType = (typeof GAME_TYPES)[number];
 
@@ -52,6 +53,7 @@ export const GAME_FAMILY: Record<GameType, string> = {
   alibi_club: 'Deduction',
   close_call: 'Predictions',
   snakes_and_ladders: 'Board',
+  judgement: 'Cards',
 };
 
 /** Room lifecycle. */

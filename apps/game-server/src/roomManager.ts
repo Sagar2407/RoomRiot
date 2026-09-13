@@ -45,7 +45,7 @@ import { issueToken } from './tokens.js';
 import { botMoves, isBot } from './bots.js';
 import { Analytics } from './analytics.js';
 import { resolvePlaylist } from './billing.js';
-import { rollDie } from './randomness.js';
+import { rollDie, shuffle } from './randomness.js';
 
 const XP_PER_GAME = 20;
 const XP_PER_ACHIEVEMENT = 5;
@@ -342,7 +342,7 @@ export class RoomManager {
     if (!v.ok) return this.recordAndReject(room, action, memberId, mapCode(v.code), v.message);
 
     const rng = createRng(`${g.seed}:${g.state.phase.id}:move`);
-    g.state = mod.reduce(g.state, gameAction, { activeMemberIds: this.activeRoster(room, g), rng, rollDie });
+    g.state = mod.reduce(g.state, gameAction, { activeMemberIds: this.activeRoster(room, g), rng, rollDie, shuffle });
     this.persistGame(room, g);
     this.recordAction(room, action, memberId, true, null);
 
@@ -397,7 +397,7 @@ export class RoomManager {
     const members: GameMember[] = roster.map((m) => ({ memberId: m.id, seat: m.seat, nickname: m.nickname }));
     const seed = `${room.seed}:${room.playlistIndex}:${gameType}`;
     const content = mod.selectContent(getContentFor(gameType), createRng(`${seed}:select`), members.length);
-    const state = mod.initialState({ members, rng: createRng(`${seed}:init`), content });
+    const state = mod.initialState({ members, rng: createRng(`${seed}:init`), content, shuffle });
 
     const g: GameRuntime = {
       id: randomUUID(),
@@ -467,7 +467,7 @@ export class RoomManager {
       meta: { phaseKind: endingPhase.kind, round: endingPhase.round },
     });
     const rng = createRng(`${g.seed}:${g.state.phase.id}:advance`);
-    g.state = mod.reduce(g.state, { type: '__advance', reason }, { activeMemberIds: this.activeRoster(room, g), rng, rollDie });
+    g.state = mod.reduce(g.state, { type: '__advance', reason }, { activeMemberIds: this.activeRoster(room, g), rng, rollDie, shuffle });
     this.persistGame(room, g);
 
     if (g.state.status === 'complete') {
