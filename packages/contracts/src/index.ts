@@ -13,16 +13,36 @@ import { z } from 'zod';
 export const PROTOCOL_VERSION = 1;
 export const SCORING_VERSION = 'np-2026-09-1';
 
-/** The six launch games (blueprint §5). */
+/**
+ * All KNOWN game types — the six original party games plus Indian Classics as
+ * their modules land. Being "known" (in this list, with a registered module) is
+ * separate from being ENABLED: new games are gated by the server's enabled-games
+ * allowlist and hidden from the catalog until they pass their gates (see
+ * docs/adr/0001-indian-classics.md). Adding an ID here never inserts it into the
+ * default playlist or free rotation.
+ */
 export const GAME_TYPES = [
+  // Original party games (blueprint §5).
   'majority_report',
   'bluff_bureau',
   'caption_court',
   'link_up',
   'alibi_club',
   'close_call',
+  // Indian Classics (added as each module is built; disabled until ready).
+  'snakes_and_ladders',
 ] as const;
 export type GameType = (typeof GAME_TYPES)[number];
+
+/** The original six party games — the set the classic Night Points system covers. */
+export const PARTY_GAMES: GameType[] = [
+  'majority_report',
+  'bluff_bureau',
+  'caption_court',
+  'link_up',
+  'alibi_club',
+  'close_call',
+];
 
 export const GAME_FAMILY: Record<GameType, string> = {
   majority_report: 'Predictions',
@@ -31,6 +51,7 @@ export const GAME_FAMILY: Record<GameType, string> = {
   link_up: 'Teamwork',
   alibi_club: 'Deduction',
   close_call: 'Predictions',
+  snakes_and_ladders: 'Board',
 };
 
 /** Room lifecycle. */

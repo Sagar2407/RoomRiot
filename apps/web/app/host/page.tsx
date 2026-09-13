@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { EntitlementStatus, GameType } from '@roomriot/contracts';
 import { GAME_FAMILY } from '@roomriot/contracts';
-import { hostRoom, getEntitlements, devCheckout, ensureGuestToken } from '../../lib/api';
+import { hostRoom, getEntitlements, devCheckout, ensureGuestToken, getCatalog, type CatalogEntry } from '../../lib/api';
 import { saveCreds } from '../../lib/storage';
 import { AgeGate } from '../../components/AgeGate';
 
@@ -14,12 +14,14 @@ const TITLES: Record<GameType, string> = {
   link_up: 'Link Up',
   alibi_club: 'Alibi Club',
   close_call: 'Close Call',
+  snakes_and_ladders: 'Snakes & Ladders',
 };
 
 export default function HostSetup() {
   const router = useRouter();
   const [nickname, setNickname] = useState('');
   const [ent, setEnt] = useState<EntitlementStatus | null>(null);
+  const [classics, setClassics] = useState<CatalogEntry[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,8 +33,26 @@ export default function HostSetup() {
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Could not load offer');
       }
+      try {
+        setClassics((await getCatalog()).classics);
+      } catch {
+        /* catalog is optional — a fetch failure just hides the beta games */
+      }
     })();
   }, []);
+
+  async function startClassic(gameId: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const creds = await hostRoom(nickname.trim(), { playlist: [gameId as GameType] });
+      saveCreds(creds);
+      router.push('/room');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not create room');
+      setBusy(false);
+    }
+  }
 
   const isPass = ent?.tier === 'party_pass';
   const billingOff = ent?.billingEnabled === false;
@@ -143,6 +163,21 @@ export default function HostSetup() {
               </p>
             </>
           )}
+        </div>
+      )}
+
+      {classics.length > 0 && (
+        <div className="card stack">
+          <div className="pill grey">Beta</div>
+          <h2 style={{ margin: 0 }}>New: Indian Classics</h2>
+          <p className="small muted" style={{ margin: 0 }}>
+            Our newest games, in early beta. Guests still join free with the room code.
+          </p>
+          {classics.map((c) => (
+            <button key={c.id} className="btn" disabled={busy || !nickname.trim()} onClick={() => startClassic(c.id)}>
+              {busy ? 'Starting…' : `Play ${c.title} · ${c.minPlayers}–${c.maxPlayers} players`}
+            </button>
+          ))}
         </div>
       )}
       </AgeGate>

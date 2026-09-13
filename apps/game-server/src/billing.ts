@@ -14,7 +14,7 @@
  * logic below is unchanged.
  */
 import { randomUUID, createHmac, timingSafeEqual } from 'node:crypto';
-import { GAME_TYPES, PARTY_PASS, type GameType, type EntitlementStatus, type Tier } from '@roomriot/contracts';
+import { PARTY_GAMES, PARTY_PASS, type GameType, type EntitlementStatus, type Tier } from '@roomriot/contracts';
 import type { DB } from './db.js';
 import type { Analytics } from './analytics.js';
 import { config } from './config.js';
@@ -104,11 +104,17 @@ export function activePartyPass(db: DB, guestId: string, now = Date.now()): { ac
   return row ? { active: true, validUntil: row.valid_until } : null;
 }
 
-/** The rotating free trio available right now (blueprint §14 "three rotating games"). */
+/** The rotating free trio available right now (blueprint §14). Party games only —
+ * classics never appear in the free rotation. */
 export function freeRotationGames(now = Date.now()): GameType[] {
   const day = Math.floor(now / (24 * 60 * 60 * 1000));
-  const start = ((day % GAME_TYPES.length) + GAME_TYPES.length) % GAME_TYPES.length;
-  return [0, 1, 2].map((i) => GAME_TYPES[(start + i) % GAME_TYPES.length]!);
+  const start = ((day % PARTY_GAMES.length) + PARTY_GAMES.length) % PARTY_GAMES.length;
+  return [0, 1, 2].map((i) => PARTY_GAMES[(start + i) % PARTY_GAMES.length]!);
+}
+
+/** Keep only games the deployment has enabled (classics stay off until ready). */
+function enabledOnly(games: GameType[]): GameType[] {
+  return games.filter((g) => (config.enabledGames as string[]).includes(g));
 }
 
 export function tierFor(db: DB, guestId: string, now = Date.now()): Tier {
@@ -121,10 +127,19 @@ export function tierFor(db: DB, guestId: string, now = Date.now()): Tier {
  * trio — a complete short night, never a mid-game paywall.
  */
 export function resolvePlaylist(db: DB, guestId: string, requested: GameType[], now = Date.now()): { playlist: GameType[]; tier: Tier } {
-  // Billing off ⇒ the whole app is free: everyone plays the launch playlist.
-  if (!config.billingEnabled) return { playlist: config.launchPlaylist as GameType[], tier: 'free' };
-  if (activePartyPass(db, guestId, now)) return { playlist: requested, tier: 'party_pass' };
-  return { playlist: freeRotationGames(now), tier: 'free' };
+  const fallback = enabledOnly(config.launchPlaylist as GameType[]);
+  // Billing off ⇒ the whole app is free. Honor a standalone/explicit selection
+  // (restricted to enabled games); fall back to the launch playlist otherwise
+  // (integration issue #5 — a "Play Snakes" pick must not launch the party set).
+  if (!config.billingEnabled) {
+    const picked = enabledOnly(requested);
+    return { playlist: picked.length > 0 ? picked : fallback, tier: 'free' };
+  }
+  if (activePartyPass(db, guestId, now)) {
+    const picked = enabledOnly(requested);
+    return { playlist: picked.length > 0 ? picked : fallback, tier: 'party_pass' };
+  }
+  return { playlist: enabledOnly(freeRotationGames(now)), tier: 'free' };
 }
 
 export function entitlementStatus(db: DB, guestId: string, now = Date.now()): EntitlementStatus {

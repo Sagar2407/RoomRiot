@@ -6,6 +6,7 @@ import { captionCourt } from './games/captionCourt.js';
 import { linkUp } from './games/linkUp.js';
 import { alibiClub } from './games/alibiClub.js';
 import { closeCall } from './games/closeCall.js';
+import { snakesAndLadders } from './games/snakesAndLadders.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const modules: Record<GameType, GameModule<any>> = {
@@ -15,6 +16,7 @@ const modules: Record<GameType, GameModule<any>> = {
   link_up: linkUp,
   alibi_club: alibiClub,
   close_call: closeCall,
+  snakes_and_ladders: snakesAndLadders,
 };
 
 export function getGameModule(type: GameType): GameModule {

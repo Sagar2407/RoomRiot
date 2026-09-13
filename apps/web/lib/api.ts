@@ -43,6 +43,22 @@ export function startPractice(nickname: string): Promise<MembershipCredentials &
   return post('/practice', { nickname, guestToken: loadGuestToken() });
 }
 
+export interface CatalogEntry {
+  id: string;
+  title: string;
+  family: string;
+  minPlayers: number;
+  maxPlayers: number;
+  interactionMode: 'simultaneous' | 'sequential';
+}
+
+/** Enabled classic games available to host (empty unless the deployment enables them). */
+export async function getCatalog(): Promise<{ classics: CatalogEntry[]; enabledGames: string[] }> {
+  const res = await fetch(`${SERVER_URL}/catalog`);
+  if (!res.ok) throw new Error('Could not load catalog');
+  return res.json() as Promise<{ classics: CatalogEntry[]; enabledGames: string[] }>;
+}
+
 export async function getEntitlements(): Promise<EntitlementStatus> {
   const token = loadGuestToken();
   const res = await fetch(`${SERVER_URL}/entitlements`, {

@@ -97,7 +97,7 @@ describe('free-tier gate (blueprint §14)', () => {
 });
 
 describe('billing-off launch mode (payments stripped)', () => {
-  it('serves the configured launch playlist to everyone, no paywall', async () => {
+  it('honours an explicit selection with no paywall, and falls back to the launch set', async () => {
     built = await buildServer(':memory:');
     const { db, analytics } = built;
     const trio = ['majority_report', 'caption_court', 'close_call'];
@@ -106,18 +106,17 @@ describe('billing-off launch mode (payments stripped)', () => {
     config.billingEnabled = false;
     config.launchPlaylist = [...trio];
     try {
-      // Even a "buyer" just gets the launch set — there's no gate to bypass.
+      // With billing off there is no gate, so an explicit request is honoured as-is
+      // (integration issue #5 — a standalone pick must not be replaced by the launch set).
       processBillingEvent(db, analytics, payment('guest:x'));
-      const r = resolvePlaylist(db, 'guest:x', [
-        'majority_report',
-        'bluff_bureau',
-        'caption_court',
-        'link_up',
-        'alibi_club',
-        'close_call',
-      ]);
+      const requested = ['majority_report', 'bluff_bureau', 'caption_court'] as const;
+      const r = resolvePlaylist(db, 'guest:x', [...requested]);
       expect(r.tier).toBe('free');
-      expect(r.playlist).toEqual(trio);
+      expect(r.playlist).toEqual([...requested]);
+
+      // An empty/absent request falls back to the configured launch set.
+      const fallback = resolvePlaylist(db, 'guest:x', []);
+      expect(fallback.playlist).toEqual(trio);
 
       const ent = entitlementStatus(db, 'guest:x');
       expect(ent.billingEnabled).toBe(false);

@@ -16,6 +16,7 @@ import {
   type BillingEvent,
 } from './billing.js';
 import { issueToken, verifyToken, type GuestClaims, type MemberClaims, type DisplayClaims } from './tokens.js';
+import { catalog } from './catalog.js';
 
 function guestIdFrom(token: string | undefined): string {
   const claims = verifyToken<GuestClaims>(token);
@@ -48,6 +49,10 @@ export function registerRoutes(app: FastifyInstance, rm: RoomManager, analytics:
     }
     return analytics.funnel();
   });
+
+  // Which games this deployment has enabled (host UI offers only these). Classics
+  // appear only where explicitly turned on.
+  app.get('/catalog', async () => catalog());
 
   // Mint a stable guest identity up front, so a pre-room purchase attaches to the
   // same identity that later hosts the room (blueprint §14).

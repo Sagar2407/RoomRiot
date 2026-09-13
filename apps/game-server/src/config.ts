@@ -4,16 +4,37 @@ import { dirname, resolve } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const ALL_GAMES = ['majority_report', 'bluff_bureau', 'caption_court', 'link_up', 'alibi_club', 'close_call'] as const;
+/** The original six party games. */
+const PARTY_GAMES = ['majority_report', 'bluff_bureau', 'caption_court', 'link_up', 'alibi_club', 'close_call'] as const;
+/** Indian Classics that have a registered module. Disabled by default (see ADR 0001). */
+const CLASSICS_GAMES = ['snakes_and_ladders'] as const;
+/** Every known game type (party + classics with a module). */
+const ALL_GAMES = [...PARTY_GAMES, ...CLASSICS_GAMES] as const;
 
 /** Parse ROOM_RIOT_PLAYLIST ("a,b,c") into a validated game-type list. */
 function parsePlaylist(raw: string | undefined): string[] {
-  if (!raw) return [...ALL_GAMES];
+  if (!raw) return [...PARTY_GAMES]; // default launch night never includes a classic
   const wanted = raw
     .split(',')
     .map((s) => s.trim())
     .filter((s) => (ALL_GAMES as readonly string[]).includes(s));
-  return wanted.length > 0 ? wanted : [...ALL_GAMES];
+  return wanted.length > 0 ? wanted : [...PARTY_GAMES];
+}
+
+/**
+ * Which games the catalog/host may actually start. Adding a game to the registry
+ * does not enable it: classics stay off until ROOM_RIOT_ENABLE_CLASSICS=true (all
+ * registered classics) or ROOM_RIOT_ENABLED_GAMES lists an explicit allowlist.
+ */
+function parseEnabledGames(list: string | undefined, enableClassics: string | undefined): string[] {
+  if (list) {
+    const wanted = list
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => (ALL_GAMES as readonly string[]).includes(s));
+    if (wanted.length > 0) return wanted;
+  }
+  return enableClassics === 'true' ? [...ALL_GAMES] : [...PARTY_GAMES];
 }
 
 export const config = {
@@ -69,6 +90,11 @@ export const config = {
   billingEnabled: (process.env.ROOM_RIOT_BILLING_ENABLED ?? 'true') === 'true',
   /** The set of games a night runs (also the free launch set). */
   launchPlaylist: parsePlaylist(process.env.ROOM_RIOT_PLAYLIST),
+  /**
+   * Games the host/catalog may start. Classics are hidden until explicitly
+   * enabled, so a deployed-but-unfinished game can never be launched by a guest.
+   */
+  enabledGames: parseEnabledGames(process.env.ROOM_RIOT_ENABLED_GAMES, process.env.ROOM_RIOT_ENABLE_CLASSICS),
 
   /**
    * If set (and the directory exists), the game server also serves the built web
