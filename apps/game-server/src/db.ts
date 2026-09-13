@@ -21,6 +21,12 @@ export function openDb(path = config.dbPath): DB {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   migrate(db);
+  // Backfill columns added after a DB was first created (dev convenience).
+  try {
+    db.exec(`ALTER TABLE rooms ADD COLUMN tier TEXT NOT NULL DEFAULT 'free'`);
+  } catch {
+    /* column already exists */
+  }
   return db;
 }
 
@@ -36,6 +42,7 @@ function migrate(db: DB): void {
       playlist_index INTEGER NOT NULL DEFAULT 0,
       scoring_version TEXT NOT NULL,
       seed          TEXT NOT NULL,
+      tier          TEXT NOT NULL DEFAULT 'free',
       state_version INTEGER NOT NULL DEFAULT 0,
       created_at    INTEGER NOT NULL,
       expires_at    INTEGER NOT NULL
@@ -100,6 +107,85 @@ function migrate(db: DB): void {
       member_id        TEXT,
       detail           TEXT NOT NULL,
       UNIQUE (game_instance_id, award_key)
+    );
+
+    -- Persistent XP (blueprint §6). Unique award key makes awards idempotent and
+    -- summaries rebuildable; keyed by pseudonymous guest identity, not nickname.
+    CREATE TABLE IF NOT EXISTS xp_ledger (
+      award_key  TEXT PRIMARY KEY,
+      room_id    TEXT NOT NULL,
+      guest_id   TEXT NOT NULL,
+      member_id  TEXT NOT NULL,
+      source     TEXT NOT NULL,
+      amount     INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS xp_ledger_guest ON xp_ledger(guest_id);
+
+    -- Reports for moderation (blueprint §12). Narrowly scoped evidence, retained
+    -- for review then purged; reporter stored pseudonymously.
+    CREATE TABLE IF NOT EXISTS reports (
+      id                TEXT PRIMARY KEY,
+      room_id           TEXT NOT NULL,
+      reporter_ref      TEXT NOT NULL,
+      scope             TEXT NOT NULL,
+      reason            TEXT NOT NULL,
+      status            TEXT NOT NULL DEFAULT 'open',
+      created_at        INTEGER NOT NULL,
+      retention_deadline INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS reports_room ON reports(room_id);
+
+    -- Analytics event stream (blueprint §16). Opaque refs only; no answer text,
+    -- no drinking data, no unnecessary personal identifiers.
+    CREATE TABLE IF NOT EXISTS analytics_events (
+      id            TEXT PRIMARY KEY,
+      ts            INTEGER NOT NULL,
+      event         TEXT NOT NULL,
+      room_ref      TEXT,
+      member_ref    TEXT,
+      game_type     TEXT,
+      rules_version TEXT,
+      roster_size   INTEGER,
+      platform      TEXT,
+      duration_ms   INTEGER,
+      reason        TEXT,
+      meta_json     TEXT
+    );
+    CREATE INDEX IF NOT EXISTS analytics_event ON analytics_events(event);
+    CREATE INDEX IF NOT EXISTS analytics_room ON analytics_events(room_ref);
+
+    -- Entitlements (blueprint §9, §14). One row per verified purchase; state and
+    -- validity interval drive access. Keyed by the buyer's identity (guest now,
+    -- account later).
+    CREATE TABLE IF NOT EXISTS entitlements (
+      id           TEXT PRIMARY KEY,
+      guest_id     TEXT NOT NULL,
+      product      TEXT NOT NULL,
+      platform     TEXT NOT NULL,
+      source_event TEXT NOT NULL,
+      state        TEXT NOT NULL,
+      valid_from   INTEGER NOT NULL,
+      valid_until  INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS entitlements_guest ON entitlements(guest_id);
+
+    -- Verified billing events, for idempotent entitlement changes (§14).
+    CREATE TABLE IF NOT EXISTS billing_events (
+      event_id   TEXT PRIMARY KEY,
+      type       TEXT NOT NULL,
+      guest_id   TEXT,
+      created_at INTEGER NOT NULL
+    );
+
+    -- Support requests (§15 support flow).
+    CREATE TABLE IF NOT EXISTS support_requests (
+      id         TEXT PRIMARY KEY,
+      email      TEXT,
+      message    TEXT NOT NULL,
+      room_ref   TEXT,
+      status     TEXT NOT NULL DEFAULT 'open',
+      created_at INTEGER NOT NULL
     );
   `);
 }

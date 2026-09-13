@@ -36,6 +36,32 @@ export const GAME_FAMILY: Record<GameType, string> = {
 /** Room lifecycle. */
 export type RoomStatus = 'lobby' | 'in_game' | 'intermission' | 'complete';
 
+// ---------------------------------------------------------------------------
+// Monetization (blueprint §14). Guests always join free; the host buys the
+// experience for the room. The free tier is a complete short night of rotating
+// games; the Party Pass unlocks all launch games for 24 hours.
+// ---------------------------------------------------------------------------
+
+export type Tier = 'free' | 'party_pass';
+export const FREE_NIGHT_GAMES = 3;
+export const PARTY_PASS = {
+  product: 'party_pass' as const,
+  priceUsd: 4.99,
+  durationHours: 24,
+  label: 'Party Pass',
+  unlocks: 'All launch games and host customization for 24 hours from activation.',
+};
+
+export interface EntitlementStatus {
+  tier: Tier;
+  partyPass: { active: boolean; validUntil: number } | null;
+  /** The rotating free trio available right now (or the launch set when billing is off). */
+  freeGames: GameType[];
+  offer: { product: string; priceUsd: number; durationHours: number; label: string; unlocks: string };
+  /** When false, the app is entirely free — clients hide the offer/paywall. */
+  billingEnabled: boolean;
+}
+
 /** Membership role. Host controls can be exercised from the same device used to play. */
 export type MemberRole = 'host' | 'player';
 
@@ -145,6 +171,8 @@ export interface ScoreLine {
   total: number;
   /** True when the member has a valid result in every counted game (§6). */
   official: boolean;
+  /** Persistent XP earned this night (20/game + 5/achievement, §6). */
+  xp?: number;
 }
 
 /**
@@ -182,6 +210,10 @@ export interface RoomProjection {
   status: RoomStatus;
   settings: RoomSettings;
   scoringVersion: string;
+  /** Whether this room is a free night or a Party Pass night (blueprint §14). */
+  tier: Tier;
+  /** When false, monetization is turned off entirely (clients hide tier/upsell UI). */
+  billingEnabled: boolean;
   hostMemberId: string;
   members: MemberView[];
   playlist: GameType[];

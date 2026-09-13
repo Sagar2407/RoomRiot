@@ -2,10 +2,10 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { MembershipCredentials } from '@roomriot/contracts';
-import { hostRoom, joinRoom, startPractice } from '../lib/api';
+import { joinRoom, startPractice } from '../lib/api';
 import { saveCreds } from '../lib/storage';
 
-type Mode = 'home' | 'host' | 'join';
+type Mode = 'home' | 'join';
 
 export default function Home() {
   const router = useRouter();
@@ -47,7 +47,7 @@ export default function Home() {
 
       {mode === 'home' && (
         <div className="stack">
-          <button className="btn orange" onClick={() => setMode('host')}>
+          <button className="btn orange" onClick={() => router.push('/host')}>
             Host a night
           </button>
           <button className="btn" onClick={() => setMode('join')}>
@@ -63,22 +63,6 @@ export default function Home() {
           <p className="muted small center">
             Adults · 4–10 players · drinks optional. The competition rewards how you play, not what you drink.
           </p>
-        </div>
-      )}
-
-      {mode === 'host' && (
-        <div className="card stack">
-          <h2>Host a night</h2>
-          <label className="field">
-            Your nickname
-            <input value={nickname} maxLength={24} onChange={(e) => setNickname(e.target.value)} placeholder="e.g. Sagar" />
-          </label>
-          <button className="btn orange" disabled={busy || !nickname.trim()} onClick={() => go(() => hostRoom(nickname.trim()))}>
-            {busy ? 'Creating…' : 'Create room'}
-          </button>
-          <button className="btn ghost small" onClick={() => setMode('home')}>
-            Back
-          </button>
         </div>
       )}
 

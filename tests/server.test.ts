@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { buildServer, type BuiltServer } from '@roomriot/game-server/src/index.ts';
 import { RoomManager } from '@roomriot/game-server/src/roomManager.ts';
+import { processBillingEvent } from '@roomriot/game-server/src/billing.ts';
 
 let built: BuiltServer | null = null;
 afterEach(async () => {
@@ -60,6 +61,13 @@ describe('a full six-game night runs unattended and settles once (blueprint §5,
     built = await buildServer(':memory:');
     const { rm, db, io } = built;
 
+    // A Party Pass so the full six-game playlist is unlocked (a free host would
+    // be capped to the rotating trio, blueprint §14).
+    processBillingEvent(db, built.analytics, {
+      id: 'evt_full_night',
+      type: 'payment.succeeded',
+      data: { guestId: 'bot:host', product: 'party_pass', platform: 'web' },
+    });
     // A bot host so the whole table plays unattended (a socketless human host is
     // correctly treated as disconnected and would not submit).
     const { credentials: host } = rm.createRoom(
@@ -91,12 +99,25 @@ describe('a full six-game night runs unattended and settles once (blueprint §5,
     expect(ledgerBefore).toBe(6 * 6); // 6 games × 6 members
 
     // Simulate a process restart: a fresh RoomManager rehydrates from the same DB.
-    const rm2 = new RoomManager(db, io);
+    const rm2 = new RoomManager(db, io, built.analytics);
     const ledgerAfter = (db.prepare('SELECT count(*) AS c FROM score_ledger WHERE room_id = ?').get(host.roomId) as { c: number }).c;
     expect(ledgerAfter).toBe(ledgerBefore); // settlement is not repeated
     const reboard = rm2.resync(host.memberId, host.roomId)!;
     expect(reboard.scoreboard.reduce((s, l) => s + l.total, 0)).toBe(
       finalProjection.scoreboard.reduce((s, l) => s + l.total, 0),
     );
+
+    // XP (blueprint §6): 20 per completed game → ≥120 across six games.
+    for (const line of finalProjection.scoreboard) {
+      expect(line.xp ?? 0).toBeGreaterThanOrEqual(120);
+    }
+
+    // Analytics funnel (blueprint §16) reflects the night.
+    const funnel = built.analytics.funnel();
+    expect(funnel.counts.rooms_created).toBeGreaterThanOrEqual(1);
+    expect(funnel.counts.games_completed).toBe(6);
+    expect(funnel.counts.rooms_activated).toBe(1);
+    expect(funnel.counts.nights_completed).toBe(1);
+    expect(funnel.rates_pct.room_activation).toBe(100);
   });
 });

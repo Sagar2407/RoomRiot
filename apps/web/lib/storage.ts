@@ -31,6 +31,14 @@ export function loadGuestToken(): string | undefined {
   }
 }
 
+export function saveGuestToken(token: string): void {
+  try {
+    localStorage.setItem(GUEST, token);
+  } catch {
+    /* ignore */
+  }
+}
+
 export function clearCreds(): void {
   try {
     localStorage.removeItem(CREDS);

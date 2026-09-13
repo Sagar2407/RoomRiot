@@ -6,10 +6,12 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
+    "loadtest": "node scripts/loadtest.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",
+    "@fastify/static": "^8.0.3",
     "@roomriot/contracts": "*",
     "@roomriot/content": "*",
     "@roomriot/game-core": "*",

@@ -32,6 +32,7 @@ import {
   type MemberView,
   type Award,
   type GameType,
+  type Tier,
   type ClientAction,
   type ActionResult,
   type ActionRejectionCode,
@@ -41,6 +42,11 @@ import type { DB } from './db.js';
 import { config } from './config.js';
 import { issueToken } from './tokens.js';
 import { botMoves, isBot } from './bots.js';
+import { Analytics } from './analytics.js';
+import { resolvePlaylist } from './billing.js';
+
+const XP_PER_GAME = 20;
+const XP_PER_ACHIEVEMENT = 5;
 
 interface Member {
   id: string;
@@ -68,18 +74,20 @@ interface Room {
   settings: RoomSettings;
   playlist: GameType[];
   playlistIndex: number;
+  tier: Tier;
   seed: string;
   members: Map<string, Member>;
   game: GameRuntime | null;
   settledGames: SettledGame[];
   awards: Award[];
+  xpByMember: Record<string, number>;
   seq: number;
   timer: NodeJS.Timeout | null;
   expiresAt: number;
 }
 
 const DEFAULT_SETTINGS: RoomSettings = {
-  playlist: ['majority_report', 'bluff_bureau', 'caption_court', 'link_up', 'alibi_club', 'close_call'],
+  playlist: config.launchPlaylist as GameType[],
   familiarity: 'friends',
   vibe: 'clever',
   timerScale: 1,
@@ -95,6 +103,7 @@ export class RoomManager {
   constructor(
     private db: DB,
     private io: IOServer,
+    readonly analytics: Analytics,
   ) {
     this.rehydrate();
   }
@@ -114,6 +123,10 @@ export class RoomManager {
 
   createRoom(nickname: string, settings: Partial<RoomSettings> | undefined, guestId: string) {
     const merged = RoomSettingsSchema.parse({ ...DEFAULT_SETTINGS, ...(settings ?? {}) });
+    // Free tier gets a complete short night of rotating games; a Party Pass
+    // unlocks the requested playlist. Resolved once, here — never mid-game (§14).
+    const { playlist, tier } = resolvePlaylist(this.db, guestId, merged.playlist);
+    merged.playlist = playlist;
     const id = randomUUID();
     const code = this.freshCode();
     const now = Date.now();
@@ -123,28 +136,31 @@ export class RoomManager {
       hostMemberId: '',
       status: 'lobby',
       settings: merged,
-      playlist: merged.playlist,
+      playlist,
       playlistIndex: 0,
+      tier,
       seed: randomBytes(12).toString('hex'),
       members: new Map(),
       game: null,
       settledGames: [],
       awards: [],
+      xpByMember: {},
       seq: 0,
       timer: null,
       expiresAt: now + config.roomTtlMs,
     };
     this.db
       .prepare(
-        `INSERT INTO rooms (id, code, host_member_id, status, settings_json, playlist_json, playlist_index, scoring_version, seed, state_version, created_at, expires_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO rooms (id, code, host_member_id, status, settings_json, playlist_json, playlist_index, scoring_version, seed, tier, state_version, created_at, expires_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
-      .run(id, code, '', room.status, JSON.stringify(merged), JSON.stringify(room.playlist), 0, SCORING_VERSION, room.seed, 0, now, room.expiresAt);
+      .run(id, code, '', room.status, JSON.stringify(merged), JSON.stringify(room.playlist), 0, SCORING_VERSION, room.seed, tier, 0, now, room.expiresAt);
     this.rooms.set(id, room);
 
     const member = this.insertMember(room, guestId, nickname, 'host');
     room.hostMemberId = member.id;
     this.db.prepare(`UPDATE rooms SET host_member_id = ? WHERE id = ?`).run(member.id, id);
+    this.analytics.emit('room_created', { roomId: id, memberId: member.id, rosterSize: 1 });
     return this.credentials(room, member, guestId);
   }
 
@@ -161,6 +177,11 @@ export class RoomManager {
       // then play from the next game (blueprint §5).
     }
     const member = this.insertMember(room, guestId, nickname, 'player');
+    this.analytics.emit('join_succeeded', {
+      roomId: room.id,
+      memberId: member.id,
+      rosterSize: [...room.members.values()].filter((m) => m.active).length,
+    });
     this.touch(room);
     this.broadcast(room);
     return this.credentials(room, member, guestId);
@@ -230,6 +251,8 @@ export class RoomManager {
     if (!room) return null;
     this.socketsByMember.set(memberId, socket);
     const m = room.members.get(memberId)!;
+    // Re-attaching once a night is underway is a reconnect, not a first join.
+    if (room.status !== 'lobby') this.analytics.emit('reconnect_succeeded', { roomId: room.id, memberId });
     m.connected = true;
     this.broadcast(room);
     return room;
@@ -279,6 +302,11 @@ export class RoomManager {
     if (action.type === 'start_night' || action.type === 'next' || action.type === 'end_night' || action.type === 'add_bot') {
       if (member.role !== 'host') return this.recordAndReject(room, action, memberId, 'not_permitted', 'Host only');
       return this.hostAction(room, action, memberId);
+    }
+
+    // Reporting is available to any active member at any time (blueprint §7, §12).
+    if (action.type === 'report_content') {
+      return this.reportContent(room, action, memberId);
     }
 
     // Game moves.
@@ -366,6 +394,12 @@ export class RoomManager {
       )
       .run(g.id, room.id, room.playlistIndex, gameType, SCORING_VERSION, seed, JSON.stringify(state), state.phase.id, null, 'active', Date.now());
     this.db.prepare(`UPDATE rooms SET status = ?, playlist_index = ? WHERE id = ?`).run(room.status, room.playlistIndex, room.id);
+    this.analytics.emit('game_started', {
+      roomId: room.id,
+      gameType,
+      rulesVersion: SCORING_VERSION,
+      rosterSize: members.length,
+    });
     this.schedulePhase(room);
     this.broadcast(room);
   }
@@ -401,6 +435,14 @@ export class RoomManager {
       room.timer = null;
     }
     const mod = getGameModule(g.gameType);
+    const endingPhase = g.state.phase;
+    this.analytics.emit('phase_completed', {
+      roomId: room.id,
+      gameType: g.gameType,
+      reason,
+      durationMs: Math.round(endingPhase.durationMs * room.settings.timerScale),
+      meta: { phaseKind: endingPhase.kind, round: endingPhase.round },
+    });
     const rng = createRng(`${g.seed}:${g.state.phase.id}:advance`);
     g.state = mod.reduce(g.state, { type: '__advance', reason }, { activeMemberIds: this.activeRoster(room, g), rng });
     this.persistGame(room, g);
@@ -432,18 +474,30 @@ export class RoomManager {
     const insertAward = this.db.prepare(
       `INSERT OR IGNORE INTO awards (id, room_id, game_instance_id, award_key, title, member_id, detail) VALUES (?,?,?,?,?,?,?)`,
     );
+    const insertXp = this.db.prepare(
+      `INSERT OR IGNORE INTO xp_ledger (award_key, room_id, guest_id, member_id, source, amount, created_at) VALUES (?,?,?,?,?,?,?)`,
+    );
     const now = Date.now();
     const txn = this.db.transaction(() => {
       for (const e of np) {
         insertLedger.run(`${room.id}:${g.id}:${e.memberId}:game`, room.id, g.id, e.memberId, g.gameType, e.raw, e.nightPoints, now);
+        // XP: 20 for completing an eligible game (idempotent by award key). §6
+        const guestId = room.members.get(e.memberId)?.guestId ?? e.memberId;
+        insertXp.run(`${room.id}:${g.id}:${e.memberId}:xp_game`, room.id, guestId, e.memberId, 'game_completed', XP_PER_GAME, now);
       }
       for (const a of result.awards ?? []) {
         insertAward.run(randomUUID(), room.id, g.id, a.key, a.title, a.memberId, a.detail);
+        // XP: one 5-point achievement bonus per member per game (capped by key). §6
+        if (a.memberId) {
+          const guestId = room.members.get(a.memberId)?.guestId ?? a.memberId;
+          insertXp.run(`${room.id}:${g.id}:${a.memberId}:xp_ach`, room.id, guestId, a.memberId, 'achievement', XP_PER_ACHIEVEMENT, now);
+        }
       }
       this.db.prepare(`UPDATE game_instances SET settled = 1, status = 'complete', state_json = ? WHERE id = ?`).run(JSON.stringify(g.state), g.id);
     });
     txn();
     g.settled = true;
+    this.analytics.emit('game_completed', { roomId: room.id, gameType: g.gameType, rulesVersion: SCORING_VERSION, rosterSize: g.roster.length });
     this.reloadScores(room);
   }
 
@@ -462,6 +516,26 @@ export class RoomManager {
     };
     room.awards = [nightAward, ...room.awards.filter((a) => a.key !== 'night_champion')];
     this.db.prepare(`UPDATE rooms SET status = 'complete' WHERE id = ?`).run(room.id);
+    this.analytics.emit('session_completed', {
+      roomId: room.id,
+      rosterSize: [...room.members.values()].filter((m) => m.active).length,
+      meta: { gamesPlayed: room.settledGames.length },
+    });
+  }
+
+  private reportContent(room: Room, action: ClientAction, memberId: string): ActionResult {
+    const p = (action.payload ?? {}) as { reason?: unknown; note?: unknown };
+    const reason = typeof p.reason === 'string' && p.reason.trim() ? p.reason.trim().slice(0, 64) : 'unspecified';
+    const g = room.game;
+    const scope = g ? `${g.gameType}:${g.state.phase.kind}:r${g.state.phase.round}` : room.status;
+    const now = Date.now();
+    this.db
+      .prepare(`INSERT INTO reports (id, room_id, reporter_ref, scope, reason, status, created_at, retention_deadline) VALUES (?,?,?,?,?, 'open', ?, ?)`)
+      .run(randomUUID(), room.id, this.analytics.ref(memberId), scope, reason, now, now + 30 * 24 * 60 * 60 * 1000);
+    this.analytics.emit('content_reported', { roomId: room.id, memberId, gameType: g?.gameType ?? null, reason, meta: { scope } });
+    this.recordAction(room, action, memberId, true, null);
+    // No broadcast: reports are private to moderation, not surfaced to the room.
+    return { actionId: action.actionId, accepted: true, sequence: room.seq };
   }
 
   // ---- projections -------------------------------------------------------
@@ -490,6 +564,7 @@ export class RoomManager {
       });
 
     const scoreboard = buildScoreboard(members.map((m) => ({ memberId: m.memberId, nickname: m.nickname })), room.playlist, room.settledGames);
+    for (const line of scoreboard) line.xp = room.xpByMember[line.memberId] ?? 0;
 
     const projection: RoomProjection = {
       protocolVersion: PROTOCOL_VERSION,
@@ -500,6 +575,8 @@ export class RoomManager {
       status: room.status,
       settings: room.settings,
       scoringVersion: SCORING_VERSION,
+      tier: room.tier,
+      billingEnabled: config.billingEnabled,
       hostMemberId: room.hostMemberId,
       members,
       playlist: room.playlist,
@@ -613,6 +690,12 @@ export class RoomManager {
       nickname: a.member_id ? (room.members.get(a.member_id)?.nickname ?? null) : null,
       detail: a.detail,
     }));
+
+    const xpRows = this.db
+      .prepare(`SELECT member_id, SUM(amount) AS xp FROM xp_ledger WHERE room_id = ? GROUP BY member_id`)
+      .all(room.id) as Array<{ member_id: string; xp: number }>;
+    room.xpByMember = {};
+    for (const r of xpRows) room.xpByMember[r.member_id] = r.xp;
   }
 
   // ---- startup recovery (blueprint §10) ---------------------------------
@@ -628,11 +711,13 @@ export class RoomManager {
         settings: JSON.parse(r.settings_json as string),
         playlist: JSON.parse(r.playlist_json as string),
         playlistIndex: r.playlist_index as number,
+        tier: ((r.tier as Tier) ?? 'free'),
         seed: r.seed as string,
         members: new Map(),
         game: null,
         settledGames: [],
         awards: [],
+        xpByMember: {},
         seq: 0,
         timer: null,
         expiresAt: r.expires_at as number,

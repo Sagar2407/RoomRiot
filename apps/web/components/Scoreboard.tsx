@@ -20,6 +20,7 @@ export function Scoreboard({ projection, selfId }: { projection: RoomProjection;
             {line.nickname}
             {line.memberId === selfId ? ' (you)' : ''}
             {!line.official && projection.status === 'complete' ? <span className="pill grey" style={{ marginLeft: 8 }}>partial</span> : null}
+            {line.xp ? <span className="small muted" style={{ marginLeft: 8 }}>· {line.xp} XP</span> : null}
           </span>
           <span className="pts">{line.total}</span>
         </div>

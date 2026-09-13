@@ -27,7 +27,9 @@ export function useRoom(auth: Auth | null): UseRoom {
 
   useEffect(() => {
     if (!auth) return;
-    const socket = io(SERVER_URL, { auth, transports: ['websocket', 'polling'] });
+    // Empty SERVER_URL ⇒ same-origin (single-service deploy): let socket.io default.
+    const target = SERVER_URL || undefined;
+    const socket = io(target, { auth, transports: ['websocket', 'polling'] });
     socketRef.current = socket;
 
     socket.on('connect', () => {
