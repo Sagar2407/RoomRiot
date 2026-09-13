@@ -25,3 +25,6 @@ export { judgement } from './games/judgement.js';
 export type { JudgementState } from './games/judgement.js';
 export { teenPatti } from './games/teenPatti.js';
 export type { TeenPattiState } from './games/teenPatti.js';
+export * from './boards/ludoBoard.js';
+export { ludo, createLudoState } from './games/ludo.js';
+export type { LudoState } from './games/ludo.js';

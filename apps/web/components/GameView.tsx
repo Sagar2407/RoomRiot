@@ -6,6 +6,7 @@ import { Members } from './Members';
 import { SnakesView } from './games/SnakesView';
 import { JudgementView } from './games/JudgementView';
 import { TeenPattiView } from './games/TeenPattiView';
+import { LudoView } from './games/LudoView';
 
 type Send = (a: Omit<ClientAction, 'actionId'>) => Promise<ActionResult>;
 
@@ -23,6 +24,8 @@ export function GameView(props: { projection: RoomProjection; send: Send; board?
       return <JudgementView {...props} />;
     case 'teen_patti':
       return <TeenPattiView {...props} />;
+    case 'ludo':
+      return <LudoView {...props} />;
     default:
       return <PartyGameView {...props} />;
   }
@@ -38,6 +41,7 @@ const TITLES: Record<GameType, string> = {
   snakes_and_ladders: 'Snakes & Ladders',
   judgement: 'Judgement',
   teen_patti: 'Teen Patti',
+  ludo: 'Ludo',
 };
 
 function PartyGameView({ projection, send, board }: { projection: RoomProjection; send: Send; board?: boolean }) {

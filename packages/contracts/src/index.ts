@@ -33,6 +33,7 @@ export const GAME_TYPES = [
   'snakes_and_ladders',
   'judgement',
   'teen_patti',
+  'ludo',
 ] as const;
 export type GameType = (typeof GAME_TYPES)[number];
 
@@ -56,6 +57,7 @@ export const GAME_FAMILY: Record<GameType, string> = {
   snakes_and_ladders: 'Board',
   judgement: 'Cards',
   teen_patti: 'Cards',
+  ludo: 'Board',
 };
 
 /** Room lifecycle. */

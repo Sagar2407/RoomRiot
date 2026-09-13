@@ -118,6 +118,15 @@ export function botMoves(gameType: GameType, pub: GamePublicView, priv: GamePriv
       if (Math.random() < 0.25 + 0.25 * circuit) return [{ type: 'fold', payload: {} }];
       return [{ type: 'bet', payload: { raise: false } }];
     }
+    case 'ludo': {
+      if (pub.phaseKind === 'roll') return [{ type: 'roll', payload: {} }];
+      if (pub.phaseKind === 'move') {
+        const legal = (pub.prompt as { legalTokens?: number[] } | undefined)?.legalTokens ?? [];
+        if (legal.length === 0) return [];
+        return [{ type: 'move', payload: { tokenIndex: legal[0] } }];
+      }
+      return [];
+    }
     default:
       return [];
   }
