@@ -108,6 +108,16 @@ export function botMoves(gameType: GameType, pub: GamePublicView, priv: GamePriv
       }
       return [];
     }
+    case 'teen_patti': {
+      if (pub.phaseKind !== 'betting') return [];
+      const s = priv.secret as { canShow?: boolean } | undefined;
+      // End a heads-up hand with a show; otherwise play blind with a fold chance
+      // that ramps each circuit, so hands resolve well within the cap.
+      if (s?.canShow) return [{ type: 'show', payload: {} }];
+      const circuit = (pub.prompt as { circuit?: number } | undefined)?.circuit ?? 0;
+      if (Math.random() < 0.25 + 0.25 * circuit) return [{ type: 'fold', payload: {} }];
+      return [{ type: 'bet', payload: { raise: false } }];
+    }
     default:
       return [];
   }
